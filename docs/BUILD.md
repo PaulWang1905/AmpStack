@@ -167,6 +167,62 @@ npm run dev        # Vite dev server only (Tauri APIs are no-ops in a browser)
 npm run build      # tsc typecheck + Vite production bundle
 ```
 
+## 8. Desktop icon on Linux
+
+On Linux the dock/taskbar icon is **not** read from `bundle.icon` at runtime.
+The desktop matches a *window* to an *application* by the window's `app_id`
+(Wayland) / `WM_CLASS` (X11), then draws the `Icon=` from the matching
+`.desktop` file. For AmpStack that identity is the **binary name `ampstack`** —
+Tauri's bundler writes the `.desktop` with `Icon=ampstack`,
+`StartupWMClass=ampstack`, and the window reports `app_id=ampstack` to match.
+
+> Do **not** set `app.enableGTKAppId` in `tauri.conf.json`. It changes the
+> runtime `app_id` to the reverse-DNS identifier (`dev.ampstack.player`), which
+> then no longer matches the bundler's `StartupWMClass=ampstack`, so the icon
+> stops resolving.
+
+**Installed packages (`.deb` / `.rpm`) — icon works automatically.** They place
+the icon under `/usr/share/icons/hicolor/<size>/apps/ampstack.png` and the
+launcher at `/usr/share/applications/AmpStack.desktop`, so the desktop finds it
+on first launch.
+
+**Portable AppImage — needs one extra step.** A bare AppImage keeps its icon and
+`.desktop` *inside* the image and installs nothing, so GNOME has no `ampstack`
+icon in its theme and falls back to a generic one. Either integrate the AppImage
+(e.g. AppImageLauncher), or install a user-level icon + launcher once:
+
+```bash
+# Install the icon under the name the window expects ("ampstack")
+for sz in 32x32 128x128 512x512; do
+  install -Dm644 "src-tauri/icons/${sz}.png" \
+    "$HOME/.local/share/icons/hicolor/${sz}/apps/ampstack.png"
+done
+install -Dm644 src-tauri/icons/128x128@2x.png \
+  "$HOME/.local/share/icons/hicolor/256x256/apps/ampstack.png"
+
+# Launcher whose StartupWMClass matches the window app_id
+cat > "$HOME/.local/share/applications/ampstack.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=AmpStack
+Comment=Desktop music player
+Icon=ampstack
+Exec=/absolute/path/to/AmpStack_<version>_amd64.AppImage
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=ampstack
+EOF
+
+gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+```
+
+Then relaunch the app. If the dock still shows the old icon, GNOME has cached
+the association — log out/in (Wayland) or restart the shell. Note the
+`.AppImage` *file* itself still shows a generic "executable" icon in the file
+manager until the image is integrated; the steps above fix the **running app's**
+icon, not the file thumbnail.
+
 ## Troubleshooting
 
 - **`cargo: command not found`** in a restricted shell but present in a normal
@@ -178,6 +234,10 @@ npm run build      # tsc typecheck + Vite production bundle
   librsvg2-dev`, then re-run the appimage build. (deb/rpm don't need it.)
 - **External download fails immediately** → check `yt-dlp` is on `PATH`
   (`yt-dlp --version`) and `ffmpeg` is installed.
+- **App runs but shows a generic icon (not the AmpStack logo)** → you're
+  launching a bare AppImage; GNOME has no `ampstack` icon installed. Run the
+  one-time install in §8, or install the `.deb`/`.rpm` instead. Don't "fix" it by
+  setting `enableGTKAppId` — that breaks the icon match (see §8).
 - **Where do app data, library DB, and downloads live?** By default
   `~/.local/share/dev.ampstack.player/` (`library.sqlite3`, `downloads/`,
   `remote-cache/`). Both the **data folder** (for syncing across devices) and the

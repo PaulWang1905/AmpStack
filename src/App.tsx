@@ -126,9 +126,12 @@ function RenameDialog({ track, onClose }: { track: Track; onClose: () => void })
   const renamesFile = track.sourceType === "downloaded_file";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-[#16161d] p-5 shadow-2xl"
+        className="glass-strong amp-pop w-full max-w-md rounded-2xl border border-white/10 p-5"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -593,7 +596,8 @@ function SettingsView() {
     checkYtDlp().then(setYtdlp).catch(() => setYtdlp(null));
   }, []);
 
-  const card = "rounded-2xl border border-white/8 bg-[#101016] p-5";
+  const card =
+    "rounded-2xl border border-white/8 bg-white/[0.025] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]";
 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-6 py-6">
@@ -792,7 +796,7 @@ function PlayerBar() {
             <SkipBack className="h-5 w-5" />
           </button>
           <button
-            className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30 transition hover:scale-105 disabled:opacity-50"
+            className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30 transition duration-150 hover:scale-105 hover:shadow-violet-500/50 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
             onClick={togglePlay}
             disabled={!hasTrack}
             title={isPlaying ? "Pause" : "Play"}
@@ -846,7 +850,7 @@ function DownloadsToast() {
         const indeterminate = job.status === "processing" || (job.status === "downloading" && pct === null);
         const barWidth = job.status === "complete" ? 100 : pct ?? 0;
         return (
-          <div key={job.id} className="pointer-events-auto rounded-xl border border-white/10 bg-[#16161d] p-3 shadow-2xl">
+          <div key={job.id} className="glass-strong amp-rise pointer-events-auto rounded-xl border border-white/10 p-3">
             <div className="mb-1 flex items-center gap-2">
               {job.status === "complete" ? (
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
