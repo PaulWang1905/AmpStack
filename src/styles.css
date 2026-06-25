@@ -1,0 +1,186 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    color: #ececf1;
+    background: #0b0b0f;
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14.5px;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings get tighter tracking for a cleaner type hierarchy. */
+  h1, h2, h3 {
+    letter-spacing: -0.02em;
+  }
+
+  /* Tabular figures everywhere numbers line up (times, counts, percentages). */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    overflow: hidden;
+    background: #07070b;
+  }
+
+  /* Keyboard focus ring (mouse clicks stay clean via :focus-visible). */
+  :focus-visible {
+    outline: 2px solid rgba(168, 85, 247, 0.65);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  svg {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+  }
+}
+
+/* Thin, themed scrollbars for the dark UI. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a2a33;
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a3a45;
+  background-clip: content-box;
+}
+
+/* ── Liquid Glass system ──────────────────────────────────────────────
+   A static, painted color field (cheap: no filter, no animation) gives the
+   frosted layers something to refract. Glass surfaces use backdrop-filter
+   but only on chrome that sits beside/around the scroll area, so the blur
+   samples this static backdrop and stays smooth. */
+.amp-bg {
+  background:
+    radial-gradient(1100px 620px at 12% -8%, rgba(139, 92, 246, 0.16), transparent 60%),
+    radial-gradient(1000px 560px at 102% 4%, rgba(217, 70, 239, 0.13), transparent 56%),
+    radial-gradient(900px 640px at 50% 116%, rgba(56, 189, 248, 0.08), transparent 60%),
+    #08080d;
+}
+
+/* Frosted translucent material with a top specular highlight + soft edge. */
+.glass {
+  background: rgba(255, 255, 255, 0.045);
+  -webkit-backdrop-filter: blur(20px) saturate(165%);
+  backdrop-filter: blur(20px) saturate(165%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Slightly denser glass for floating elements (dialogs, toasts, popovers). */
+.glass-strong {
+  background: rgba(22, 22, 30, 0.72);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 24px 60px -20px rgba(0, 0, 0, 0.75);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* Graceful fallback where backdrop-filter is unavailable. */
+  .glass { background: rgba(20, 20, 28, 0.85); }
+  .glass-strong { background: rgba(22, 22, 30, 0.95); }
+}
+
+/* ── Restrained motion (transform/opacity only, short, GPU-cheap) ────── */
+.amp-rise {
+  animation: amp-rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes amp-rise {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.amp-pop {
+  animation: amp-pop 0.16s ease-out both;
+}
+@keyframes amp-pop {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .amp-rise,
+  .amp-pop { animation: none; }
+}
+
+/* Custom range slider: purple fill driven by the inline --pct variable. */
+.amp-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    #a855f7 0%,
+    #a855f7 calc(var(--pct, 0) * 1%),
+    #303039 calc(var(--pct, 0) * 1%),
+    #303039 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.amp-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #f5f3ff;
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.18);
+  transition: transform 0.12s ease;
+}
+.amp-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.amp-range:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.amp-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 9999px;
+  background: #f5f3ff;
+}

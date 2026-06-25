@@ -1,0 +1,25 @@
+[package]
+name = "ampstack"
+version = "0.1.0"
+description = "Desktop music player with local library scanning and Rust-native playback"
+authors = ["AmpStack"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+rodio = { version = "0.22", features = ["playback", "symphonia-all"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
