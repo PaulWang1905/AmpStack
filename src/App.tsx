@@ -54,17 +54,10 @@ function sourceLabel(track: Track): string {
   return "Offline";
 }
 
-function sourceBadgeClass(track: Track): string {
-  switch (track.sourceType) {
-    case "remote_url":
-      return "bg-sky-500/15 text-sky-300";
-    case "downloaded_file":
-      return "bg-emerald-500/15 text-emerald-300";
-    case "local_file":
-      return "bg-amber-500/15 text-amber-300";
-    default:
-      return "bg-violet-500/15 text-violet-300";
-  }
+/** One quiet chip for every source — the label text already says which is
+ *  which, so colour would just be noise. */
+function sourceBadgeClass(_track: Track): string {
+  return "bg-black/[0.05] text-zinc-500";
 }
 
 /** Purple range slider whose fill follows the current value. */
@@ -105,7 +98,7 @@ function AlbumArt({ track, size }: { track?: Track; size: "sm" | "lg" }) {
   const iconSize = size === "lg" ? "h-7 w-7" : "h-5 w-5";
   return (
     <div
-      className={`${dimension} grid shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-violet-500/40 via-fuchsia-500/25 to-indigo-600/40 text-violet-100 shadow-inner ring-1 ring-white/10`}
+      className={`${dimension} grid shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm ring-1 ring-black/[0.06]`}
     >
       {track ? <Music2 className={iconSize} /> : <Disc3 className={iconSize} />}
     </div>
@@ -127,43 +120,43 @@ function RenameDialog({ track, onClose }: { track: Track; onClose: () => void })
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="glass-strong amp-pop w-full max-w-md rounded-2xl border border-white/10 p-5"
+        className="glass-strong amp-pop w-full max-w-md rounded-2xl border border-black/[0.07] p-5"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Edit track</h2>
-          <button className="rounded-lg p-1 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" onClick={onClose} aria-label="Close">
+          <button className="rounded-lg p-1 text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-900" onClick={onClose} aria-label="Close">
             <X />
           </button>
         </div>
-        <label className="mb-1 block text-sm text-zinc-400">Title</label>
+        <label className="mb-1 block text-sm text-zinc-500">Title</label>
         <input
           autoFocus
-          className="mb-3 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 outline-none focus:border-violet-500"
+          className="mb-3 w-full rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2 outline-none focus:border-violet-500"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && submit()}
         />
-        <label className="mb-1 block text-sm text-zinc-400">Artist</label>
+        <label className="mb-1 block text-sm text-zinc-500">Artist</label>
         <input
-          className="mb-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 outline-none focus:border-violet-500"
+          className="mb-2 w-full rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2 outline-none focus:border-violet-500"
           value={artist}
           onChange={(event) => setArtist(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && submit()}
         />
         {renamesFile && (
-          <p className="mb-4 text-xs text-zinc-500">The downloaded file on disk will be renamed to match.</p>
+          <p className="mb-4 text-xs text-zinc-400">The downloaded file on disk will be renamed to match.</p>
         )}
         <div className="mt-2 flex justify-end gap-2">
-          <button className="rounded-lg px-4 py-2 text-zinc-300 hover:bg-white/5" onClick={onClose}>
+          <button className="rounded-lg px-4 py-2 text-zinc-700 hover:bg-black/[0.05]" onClick={onClose}>
             Cancel
           </button>
           <button
-            className="rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="rounded-lg bg-violet-600 px-4 py-2 font-medium text-white disabled:opacity-50"
             disabled={!title.trim()}
             onClick={submit}
           >
@@ -196,7 +189,7 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
     <div
       className={[
         "group flex items-center gap-3 rounded-lg px-2 py-1.5 transition",
-        isActive ? "bg-violet-500/[0.08]" : "hover:bg-white/[0.04]",
+        isActive ? "bg-violet-600/[0.07]" : "hover:bg-black/[0.04]",
         track.missing ? "opacity-60" : ""
       ].join(" ")}
     >
@@ -208,7 +201,7 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
       >
         <AlbumArt track={track} size="sm" />
         <span
-          className={`absolute inset-0 grid place-items-center rounded-xl bg-black/55 text-white transition ${
+          className={`absolute inset-0 grid place-items-center rounded-xl bg-black/35 text-white transition ${
             isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
@@ -217,31 +210,31 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
       </button>
 
       <button className="grid min-w-0 flex-1 gap-0.5 text-left" onClick={() => playTrack(track.id)} type="button">
-        <span className={`truncate text-[0.92rem] font-medium ${isActive ? "text-violet-200" : "text-zinc-100"}`}>
+        <span className={`truncate text-[0.92rem] font-medium ${isActive ? "text-violet-700" : "text-zinc-900"}`}>
           {track.title}
         </span>
-        <span className="truncate text-[0.8rem] text-zinc-400">
+        <span className="truncate text-[0.8rem] text-zinc-500">
           {track.artist ?? "Unknown artist"}
           {track.missing ? " · Missing" : ""}
         </span>
       </button>
 
       {isDownloading && (
-        <span className="text-xs tabular-nums text-violet-300">{downloadPct !== null ? `${downloadPct}%` : "…"}</span>
+        <span className="text-xs tabular-nums text-violet-600">{downloadPct !== null ? `${downloadPct}%` : "…"}</span>
       )}
 
       <span className={`hidden rounded-md px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide sm:inline ${sourceBadgeClass(track)}`}>
         {sourceLabel(track)}
       </span>
 
-      <span className="w-10 text-right text-[0.8rem] tabular-nums text-zinc-500">
+      <span className="w-10 text-right text-[0.8rem] tabular-nums text-zinc-400">
         {formatSeconds(track.durationSeconds)}
       </span>
 
       <div className="flex items-center gap-0.5">
         <button
-          className={`rounded-lg p-1.5 transition hover:bg-white/5 ${
-            track.favorite ? "text-fuchsia-400" : "text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-zinc-200"
+          className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${
+            track.favorite ? "text-violet-600" : "text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-zinc-800"
           }`}
           onClick={() => toggleFavorite(track.id)}
           title={track.favorite ? "Remove from favorites" : "Add to favorites"}
@@ -251,7 +244,7 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
         </button>
         {track.sourceType === "remote_url" && (
           <button
-            className="rounded-lg p-1.5 text-zinc-500 opacity-0 transition hover:bg-white/5 hover:text-zinc-200 group-hover:opacity-100 disabled:opacity-40"
+            className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-black/[0.05] hover:text-zinc-800 group-hover:opacity-100 disabled:opacity-40"
             disabled={busy || isDownloading}
             onClick={() => downloadTrack(track.id)}
             title="Download for offline"
@@ -261,7 +254,7 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
           </button>
         )}
         <button
-          className="rounded-lg p-1.5 text-zinc-500 opacity-0 transition hover:bg-white/5 hover:text-zinc-200 group-hover:opacity-100"
+          className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-black/[0.05] hover:text-zinc-800 group-hover:opacity-100"
           onClick={() => onRename(track)}
           title="Edit title / artist"
           type="button"
@@ -269,7 +262,7 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
           <Pencil />
         </button>
         <button
-          className="rounded-lg p-1.5 text-zinc-500 opacity-0 transition hover:bg-white/5 hover:text-rose-300 group-hover:opacity-100"
+          className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-black/[0.05] hover:text-rose-600 group-hover:opacity-100"
           onClick={() => {
             if (window.confirm(`Remove "${track.title}" from AmpStack? Local files stay on disk; app-downloaded copies are deleted.`)) {
               deleteTrack(track.id);
@@ -310,15 +303,15 @@ function TitleBar() {
   const appWindow = useMemo(() => getCurrentWindow(), []);
   const maximized = useIsMaximized();
 
-  const control = "grid h-8 w-12 place-items-center text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100";
+  const control = "grid h-8 w-12 place-items-center text-zinc-500 transition hover:bg-black/[0.06] hover:text-zinc-900";
 
   return (
     <div
       data-tauri-drag-region
-      className="glass flex h-9 shrink-0 select-none items-center justify-between border-b border-white/8"
+      className="glass flex h-9 shrink-0 select-none items-center justify-between border-b border-black/[0.06]"
     >
-      <div data-tauri-drag-region className="flex items-center gap-2 pl-3 text-xs font-medium text-zinc-500">
-        <Disc3 className="h-3.5 w-3.5 text-violet-400" />
+      <div data-tauri-drag-region className="flex items-center gap-2 pl-3 text-xs font-medium text-zinc-400">
+        <Disc3 className="h-3.5 w-3.5 text-violet-600" />
         <span>AmpStack</span>
       </div>
       <div className="flex items-stretch">
@@ -329,7 +322,7 @@ function TitleBar() {
           {maximized ? <Copy className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
         </button>
         <button
-          className="grid h-8 w-12 place-items-center text-zinc-400 transition hover:bg-rose-500/80 hover:text-white"
+          className="grid h-8 w-12 place-items-center text-zinc-500 transition hover:bg-rose-500/80 hover:text-white"
           onClick={() => appWindow.close()}
           title="Close"
           type="button"
@@ -390,13 +383,13 @@ function NavButton({
   return (
     <button
       className={`relative flex w-full items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left text-[0.9rem] font-medium transition ${
-        active ? "bg-violet-500/10 text-violet-100" : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
+        active ? "bg-violet-600/10 text-violet-700" : "text-zinc-500 hover:bg-black/[0.04] hover:text-zinc-900"
       }`}
       onClick={onClick}
       type="button"
     >
-      {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-violet-400" />}
-      <span className={active ? "text-violet-300" : "text-zinc-500"}>{icon}</span>
+      {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-violet-600" />}
+      <span className={active ? "text-violet-600" : "text-zinc-400"}>{icon}</span>
       <span className="flex-1">{label}</span>
       {badge}
     </button>
@@ -414,12 +407,12 @@ function Sidebar() {
   const favoriteCount = useMemo(() => tracks.filter((track) => track.favorite).length, [tracks]);
 
   const addButton =
-    "flex items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm font-medium text-zinc-300 transition hover:border-violet-500/40 hover:bg-violet-500/5 hover:text-violet-100";
+    "flex items-center gap-2.5 rounded-lg border border-black/[0.06] bg-black/[0.03] px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-violet-500/50 hover:bg-violet-600/[0.06] hover:text-violet-700";
 
   return (
-    <aside className="glass flex w-60 shrink-0 flex-col gap-7 border-r border-white/8 px-3 py-5">
+    <aside className="glass flex w-60 shrink-0 flex-col gap-7 border-r border-black/[0.06] px-3 py-5">
       <div className="flex items-center gap-2.5 px-2">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30">
+        <div className="grid h-9 w-9 place-items-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-500/30">
           <Disc3 className="h-5 w-5" />
         </div>
         <span className="text-[1.05rem] font-bold tracking-tight">AmpStack</span>
@@ -439,7 +432,7 @@ function Sidebar() {
           active={view === "library" && sourceFilter === "favorites"}
           icon={<Heart className="h-[18px] w-[18px]" />}
           label="Favorites"
-          badge={favoriteCount > 0 ? <span className="text-xs tabular-nums text-zinc-500">{favoriteCount}</span> : undefined}
+          badge={favoriteCount > 0 ? <span className="text-xs tabular-nums text-zinc-400">{favoriteCount}</span> : undefined}
           onClick={() => {
             setView("library");
             setSourceFilter("favorites");
@@ -454,13 +447,13 @@ function Sidebar() {
       </nav>
 
       <div className="mt-auto grid gap-2">
-        <p className="px-2 text-[0.7rem] font-semibold uppercase tracking-wider text-zinc-600">Add music</p>
+        <p className="px-2 text-[0.7rem] font-semibold uppercase tracking-wider text-zinc-400">Add music</p>
         <button className={addButton} onClick={addFolders} type="button">
-          <FolderPlus className="h-[18px] w-[18px] text-zinc-500" />
+          <FolderPlus className="h-[18px] w-[18px] text-zinc-400" />
           <span>Add folder</span>
         </button>
         <button className={addButton} onClick={importFiles} type="button">
-          <Import className="h-[18px] w-[18px] text-zinc-500" />
+          <Import className="h-[18px] w-[18px] text-zinc-400" />
           <span>Import files</span>
         </button>
       </div>
@@ -491,34 +484,34 @@ function LibraryView({ onRename }: { onRename: (track: Track) => void }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="glass flex flex-col gap-3 border-b border-white/8 px-6 py-4">
+      <header className="glass flex flex-col gap-3 border-b border-black/[0.06] px-6 py-4">
         <div className="flex items-center gap-3">
-          <label className="flex h-10 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 focus-within:border-violet-500/50">
-            <Search className="h-[18px] w-[18px] text-zinc-500" />
+          <label className="flex h-10 flex-1 items-center gap-2 rounded-xl field px-3">
+            <Search className="h-[18px] w-[18px] text-zinc-400" />
             <input
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-600"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-400"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by title, artist, album…"
             />
           </label>
           <form
-            className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 focus-within:border-violet-500/50"
+            className="flex h-10 items-center gap-2 rounded-xl field px-3"
             onSubmit={(event) => {
               event.preventDefault();
               addRemote(url);
               setUrl("");
             }}
           >
-            <Link2 className="h-[18px] w-[18px] text-zinc-500" />
+            <Link2 className="h-[18px] w-[18px] text-zinc-400" />
             <input
-              className="w-56 min-w-0 bg-transparent outline-none placeholder:text-zinc-600"
+              className="w-56 min-w-0 bg-transparent outline-none placeholder:text-zinc-400"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder="Paste audio URL"
             />
             <button
-              className="flex items-center gap-1 rounded-lg bg-violet-500/20 px-2.5 py-1 text-sm text-violet-200 transition hover:bg-violet-500/30"
+              className="flex items-center gap-1 rounded-lg bg-violet-600/10 px-2.5 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
               type="submit"
             >
               <Download className="h-4 w-4" />
@@ -533,8 +526,8 @@ function LibraryView({ onRename }: { onRename: (track: Track) => void }) {
               key={filter.value}
               className={`rounded-full px-3 py-1 text-[0.82rem] font-medium transition ${
                 sourceFilter === filter.value
-                  ? "bg-violet-500 text-white shadow-sm shadow-violet-500/30"
-                  : "bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-100"
+                  ? "bg-violet-600 text-white shadow-sm shadow-violet-500/30"
+                  : "bg-black/[0.04] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-900"
               }`}
               onClick={() => setSourceFilter(filter.value)}
               type="button"
@@ -542,14 +535,14 @@ function LibraryView({ onRename }: { onRename: (track: Track) => void }) {
               {filter.label}
             </button>
           ))}
-          <span className="ml-auto text-[0.82rem] tabular-nums text-zinc-500">
+          <span className="ml-auto text-[0.82rem] tabular-nums text-zinc-400">
             {busy ? "Working…" : `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}`}
           </span>
         </div>
       </header>
 
       {error && (
-        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           <XCircle className="h-4 w-4" />
           {error}
         </div>
@@ -557,9 +550,9 @@ function LibraryView({ onRename }: { onRename: (track: Track) => void }) {
 
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
         {tracks.length === 0 ? (
-          <div className="grid h-full place-items-center text-center text-zinc-600">
+          <div className="grid h-full place-items-center text-center text-zinc-400">
             <div className="grid justify-items-center gap-3">
-              <Disc3 className="h-10 w-10 text-zinc-700" />
+              <Disc3 className="h-10 w-10 text-zinc-300" />
               <p>{busy ? "Loading your library…" : "No tracks here yet. Add a folder, import files, or paste an audio URL."}</p>
             </div>
           </div>
@@ -596,8 +589,7 @@ function SettingsView() {
     checkYtDlp().then(setYtdlp).catch(() => setYtdlp(null));
   }, []);
 
-  const card =
-    "rounded-2xl border border-white/8 bg-white/[0.025] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]";
+  const card = "glass rounded-2xl p-5";
 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-6 py-6">
@@ -605,11 +597,11 @@ function SettingsView() {
         <h1 className="text-2xl font-bold">Settings</h1>
 
         {restartRequired && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="flex items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <RotateCcw className="h-4 w-4 shrink-0" />
             <span className="flex-1">Data folder changed. Restart AmpStack to use the new location.</span>
             <button
-              className="rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-100 transition hover:bg-amber-500/30"
+              className="rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-800 transition hover:bg-amber-500/30"
               onClick={restartApp}
               type="button"
             >
@@ -621,38 +613,38 @@ function SettingsView() {
         <section className={card}>
           <div className="mb-1 flex items-center gap-2">
             <h2 className="font-semibold">Data folder</h2>
-            <span className="rounded-md bg-violet-500/15 px-2 py-0.5 text-[0.7rem] font-medium text-violet-300">Sync</span>
+            <span className="rounded-md bg-violet-600/10 px-2 py-0.5 text-[0.7rem] font-medium text-violet-600">Sync</span>
           </div>
-          <p className="mb-3 text-sm text-zinc-500">
+          <p className="mb-3 text-sm text-zinc-400">
             Holds your library database and downloads. Point this at a synced folder (Syncthing, Dropbox, etc.) to share your
             music across devices. Existing data is copied over; takes effect after a restart.
           </p>
-          <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-            <FolderOpen className="h-[18px] w-[18px] text-violet-300" />
-            <span className="min-w-0 flex-1 truncate text-sm text-zinc-300" title={settings?.dataDir}>
+          <div className="flex items-center gap-3 rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2">
+            <FolderOpen className="h-[18px] w-[18px] text-violet-600" />
+            <span className="min-w-0 flex-1 truncate text-sm text-zinc-700" title={settings?.dataDir}>
               {settings?.dataDir ?? "…"}
             </span>
             <button
-              className="rounded-lg bg-violet-500/20 px-3 py-1 text-sm text-violet-200 transition hover:bg-violet-500/30"
+              className="rounded-lg bg-violet-600/10 px-3 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
               onClick={changeDataDir}
               type="button"
             >
               Change
             </button>
           </div>
-          <p className="mt-2 text-xs text-zinc-600">Tip: only run AmpStack on one device at a time when syncing, to avoid database conflicts.</p>
+          <p className="mt-2 text-xs text-zinc-400">Tip: only run AmpStack on one device at a time when syncing, to avoid database conflicts.</p>
         </section>
 
         <section className={card}>
           <h2 className="mb-1 font-semibold">Downloads folder</h2>
-          <p className="mb-3 text-sm text-zinc-500">Where downloaded songs are saved. Files are named after the song.</p>
-          <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-            <FolderOpen className="h-[18px] w-[18px] text-violet-300" />
-            <span className="min-w-0 flex-1 truncate text-sm text-zinc-300" title={settings?.downloadsDir}>
+          <p className="mb-3 text-sm text-zinc-400">Where downloaded songs are saved. Files are named after the song.</p>
+          <div className="flex items-center gap-3 rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2">
+            <FolderOpen className="h-[18px] w-[18px] text-violet-600" />
+            <span className="min-w-0 flex-1 truncate text-sm text-zinc-700" title={settings?.downloadsDir}>
               {settings?.downloadsDir ?? "…"}
             </span>
             <button
-              className="rounded-lg bg-violet-500/20 px-3 py-1 text-sm text-violet-200 transition hover:bg-violet-500/30"
+              className="rounded-lg bg-violet-600/10 px-3 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
               onClick={changeDownloadsDir}
               type="button"
             >
@@ -665,7 +657,7 @@ function SettingsView() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Library folders</h2>
             <button
-              className="flex items-center gap-2 rounded-lg bg-violet-500/20 px-3 py-1 text-sm text-violet-200 transition hover:bg-violet-500/30"
+              className="flex items-center gap-2 rounded-lg bg-violet-600/10 px-3 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
               onClick={addFolders}
               type="button"
             >
@@ -673,21 +665,21 @@ function SettingsView() {
             </button>
           </div>
           {libraryRoots.length === 0 ? (
-            <p className="text-sm text-zinc-500">No folders yet. Add one to scan your music.</p>
+            <p className="text-sm text-zinc-400">No folders yet. Add one to scan your music.</p>
           ) : (
             <div className="grid gap-2">
               {libraryRoots.map((root) => (
-                <div key={root.id} className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-sm text-zinc-300" title={root.path}>
+                <div key={root.id} className="flex items-center gap-2 rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2">
+                  <span className="min-w-0 flex-1 truncate text-sm text-zinc-700" title={root.path}>
                     {root.path}
                   </span>
-                  <button className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100 disabled:opacity-40" disabled={busy} onClick={() => rescanRoot(root.id)} title="Rescan" type="button">
+                  <button className="rounded-lg p-1.5 text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" disabled={busy} onClick={() => rescanRoot(root.id)} title="Rescan" type="button">
                     <RefreshCcw className="h-4 w-4" />
                   </button>
-                  <button className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100 disabled:opacity-40" disabled={busy} onClick={() => relinkRoot(root.id)} title="Locate this folder on this device (fixes missing tracks after syncing)" type="button">
+                  <button className="rounded-lg p-1.5 text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" disabled={busy} onClick={() => relinkRoot(root.id)} title="Locate this folder on this device (fixes missing tracks after syncing)" type="button">
                     <Link2 className="h-4 w-4" />
                   </button>
-                  <button className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-rose-300 disabled:opacity-40" disabled={busy} onClick={() => removeRoot(root.id)} title="Remove" type="button">
+                  <button className="rounded-lg p-1.5 text-zinc-500 hover:bg-black/[0.05] hover:text-rose-600 disabled:opacity-40" disabled={busy} onClick={() => removeRoot(root.id)} title="Remove" type="button">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -700,13 +692,13 @@ function SettingsView() {
           <div className="mb-1 flex items-center justify-between">
             <h2 className="font-semibold">Download from an external source</h2>
             {ytdlp && (
-              <span className={`flex items-center gap-1 text-xs ${ytdlp.available ? "text-emerald-400" : "text-rose-400"}`}>
+              <span className={`flex items-center gap-1 text-xs ${ytdlp.available ? "text-emerald-600" : "text-rose-600"}`}>
                 {ytdlp.available ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                 yt-dlp {ytdlp.available ? ytdlp.version ?? "ready" : "not found"}
               </span>
             )}
           </div>
-          <p className="mb-3 text-sm text-zinc-500">Uses yt-dlp + ffmpeg. The saved file is named after the song.</p>
+          <p className="mb-3 text-sm text-zinc-400">Uses yt-dlp + ffmpeg. The saved file is named after the song.</p>
           <form
             className="grid gap-3"
             onSubmit={(event) => {
@@ -716,17 +708,17 @@ function SettingsView() {
               setExternalUrl("");
             }}
           >
-            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 focus-within:border-violet-500/50">
-              <HardDriveDownload className="h-[18px] w-[18px] text-zinc-500" />
+            <div className="flex items-center gap-2 rounded-lg field px-3 py-2">
+              <HardDriveDownload className="h-[18px] w-[18px] text-zinc-400" />
               <input
-                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-600"
+                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-400"
                 value={externalUrl}
                 onChange={(event) => setExternalUrl(event.target.value)}
                 placeholder="External source URL"
               />
             </div>
             <button
-              className="flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+              className="flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-40"
               disabled={busy || !externalUrl.trim()}
               type="submit"
             >
@@ -761,17 +753,17 @@ function PlayerBar() {
   const VolumeIcon = playback.volume === 0 ? VolumeX : playback.volume < 0.5 ? Volume1 : Volume2;
 
   return (
-    <footer className="glass flex items-center gap-4 border-t border-white/8 px-5 py-3">
+    <footer className="glass flex items-center gap-4 border-t border-black/[0.06] px-5 py-3">
       {/* Now playing */}
       <div className="flex w-[24%] min-w-0 items-center gap-3">
         <AlbumArt track={activeTrack} size="lg" />
         <div className="min-w-0">
-          <div className="truncate text-[0.95rem] font-semibold text-zinc-100">{activeTrack?.title ?? playback.title ?? "Nothing playing"}</div>
-          <div className="truncate text-[0.82rem] text-zinc-400">{activeTrack?.artist ?? (hasTrack ? "Unknown artist" : "Pick a track to start")}</div>
+          <div className="truncate text-[0.95rem] font-semibold text-zinc-900">{activeTrack?.title ?? playback.title ?? "Nothing playing"}</div>
+          <div className="truncate text-[0.82rem] text-zinc-500">{activeTrack?.artist ?? (hasTrack ? "Unknown artist" : "Pick a track to start")}</div>
         </div>
         {activeTrack && (
           <button
-            className={`rounded-lg p-1.5 transition hover:bg-white/5 ${activeTrack.favorite ? "text-fuchsia-400" : "text-zinc-500 hover:text-zinc-200"}`}
+            className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${activeTrack.favorite ? "text-violet-600" : "text-zinc-400 hover:text-zinc-800"}`}
             onClick={() => toggleFavorite(activeTrack.id)}
             title={activeTrack.favorite ? "Remove from favorites" : "Add to favorites"}
             type="button"
@@ -785,18 +777,18 @@ function PlayerBar() {
       <div className="flex flex-1 flex-col items-center gap-2">
         <div className="flex items-center gap-4">
           <button
-            className={`rounded-lg p-1.5 transition hover:bg-white/5 ${shuffle ? "text-violet-400" : "text-zinc-400 hover:text-zinc-100"}`}
+            className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${shuffle ? "text-violet-600" : "text-zinc-500 hover:text-zinc-900"}`}
             onClick={toggleShuffle}
             title="Shuffle"
             type="button"
           >
             <Shuffle className="h-[18px] w-[18px]" />
           </button>
-          <button className="rounded-lg p-1.5 text-zinc-300 transition hover:bg-white/5 hover:text-white disabled:opacity-40" onClick={previous} disabled={!hasTrack} title="Previous" type="button">
+          <button className="rounded-lg p-1.5 text-zinc-700 transition hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" onClick={previous} disabled={!hasTrack} title="Previous" type="button">
             <SkipBack className="h-5 w-5" />
           </button>
           <button
-            className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30 transition duration-150 hover:scale-105 hover:shadow-violet-500/50 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+            className="grid h-11 w-11 place-items-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-500/30 transition duration-150 hover:scale-105 hover:shadow-violet-500/50 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
             onClick={togglePlay}
             disabled={!hasTrack}
             title={isPlaying ? "Pause" : "Play"}
@@ -804,11 +796,11 @@ function PlayerBar() {
           >
             {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 translate-x-[1px]" />}
           </button>
-          <button className="rounded-lg p-1.5 text-zinc-300 transition hover:bg-white/5 hover:text-white disabled:opacity-40" onClick={next} disabled={!hasTrack} title="Next" type="button">
+          <button className="rounded-lg p-1.5 text-zinc-700 transition hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" onClick={next} disabled={!hasTrack} title="Next" type="button">
             <SkipForward className="h-5 w-5" />
           </button>
           <button
-            className={`rounded-lg p-1.5 transition hover:bg-white/5 ${repeat !== "off" ? "text-violet-400" : "text-zinc-400 hover:text-zinc-100"}`}
+            className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${repeat !== "off" ? "text-violet-600" : "text-zinc-500 hover:text-zinc-900"}`}
             onClick={cycleRepeat}
             title={`Repeat: ${repeat}`}
             type="button"
@@ -817,20 +809,20 @@ function PlayerBar() {
           </button>
         </div>
         <div className="flex w-full max-w-xl items-center gap-3">
-          <span className="w-10 text-right text-xs tabular-nums text-zinc-500">{formatSeconds(playback.positionSeconds)}</span>
+          <span className="w-10 text-right text-xs tabular-nums text-zinc-400">{formatSeconds(playback.positionSeconds)}</span>
           <Slider
             value={playback.positionSeconds}
             max={duration}
             disabled={!hasTrack || duration === 0}
             onChange={(value) => seek(value)}
           />
-          <span className="w-10 text-xs tabular-nums text-zinc-500">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
+          <span className="w-10 text-xs tabular-nums text-zinc-400">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
         </div>
       </div>
 
       {/* Volume */}
       <div className="flex w-[24%] items-center justify-end gap-2">
-        <VolumeIcon className="h-[18px] w-[18px] text-zinc-500" />
+        <VolumeIcon className="h-[18px] w-[18px] text-zinc-400" />
         <div className="w-28">
           <Slider value={playback.volume} max={1} step={0.01} onChange={(value) => setVolume(value)} />
         </div>
@@ -850,27 +842,27 @@ function DownloadsToast() {
         const indeterminate = job.status === "processing" || (job.status === "downloading" && pct === null);
         const barWidth = job.status === "complete" ? 100 : pct ?? 0;
         return (
-          <div key={job.id} className="glass-strong amp-rise pointer-events-auto rounded-xl border border-white/10 p-3">
+          <div key={job.id} className="glass-strong amp-rise pointer-events-auto rounded-xl border border-black/[0.07] p-3">
             <div className="mb-1 flex items-center gap-2">
               {job.status === "complete" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
               ) : job.status === "failed" ? (
-                <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                <XCircle className="h-4 w-4 shrink-0 text-rose-600" />
               ) : (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-400" />
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-600" />
               )}
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                 {job.title ?? (job.kind === "external" ? "External download" : "Download")}
               </span>
               {job.status === "downloading" && pct !== null && (
-                <span className="text-xs tabular-nums text-zinc-400">{pct}%</span>
+                <span className="text-xs tabular-nums text-zinc-500">{pct}%</span>
               )}
             </div>
-            <div className="mb-2 truncate text-xs text-zinc-500">{job.error ?? job.stage ?? "Working…"}</div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="mb-2 truncate text-xs text-zinc-400">{job.error ?? job.stage ?? "Working…"}</div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
               <div
                 className={`h-full rounded-full transition-[width] ${
-                  job.status === "failed" ? "bg-rose-500" : "bg-gradient-to-r from-violet-500 to-fuchsia-500"
+                  job.status === "failed" ? "bg-rose-500" : "bg-violet-600"
                 } ${indeterminate ? "w-full animate-pulse" : ""}`}
                 style={indeterminate ? undefined : { width: `${barWidth}%` }}
               />
@@ -920,7 +912,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="amp-bg flex h-screen w-screen flex-col overflow-hidden text-zinc-100">
+    <div className="amp-bg flex h-screen w-screen flex-col overflow-hidden text-zinc-900">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
