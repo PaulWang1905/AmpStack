@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Disc3,
   Download,
   FolderOpen,
@@ -10,19 +11,20 @@ import {
   Import,
   Library,
   Link2,
+  ListMusic,
   Loader2,
+  Mic2,
   Minus,
-  Music2,
   Pause,
   Pencil,
   Play,
+  Plus,
   RefreshCcw,
   Repeat,
   Repeat1,
   RotateCcw,
   Search,
   Settings as SettingsIcon,
-  ShieldCheck,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -40,6 +42,9 @@ import { checkYtDlp, listenDownloadProgress, listenPlayback } from "./tauri";
 import { selectActiveDownloads, selectActiveTrack, selectFilteredTracks, useAppStore } from "./store";
 import type { Track, YtDlpStatus } from "./types";
 
+const ACCENT = "#c8954c";
+const ACCENT_SOFT = "#9a7a45";
+
 function formatSeconds(value: number | null | undefined): string {
   if (value === null || value === undefined || value < 0 || Number.isNaN(value)) return "0:00";
   const minutes = Math.floor(value / 60);
@@ -54,18 +59,105 @@ function sourceLabel(track: Track): string {
   return "Offline";
 }
 
-/** One quiet chip for every source — the label text already says which is
- *  which, so colour would just be noise. */
-function sourceBadgeClass(_track: Track): string {
-  return "bg-black/[0.05] text-zinc-500";
+/** A track that lives on disk (vs. a remote stream) shows a filled "sync" dot. */
+function isOffline(track: Track): boolean {
+  return track.sourceType !== "remote_url";
 }
 
-/** Purple range slider whose fill follows the current value. */
+/* ════════════════════════════════════════════════════════════════════════
+   Equalizer tiles stand in for album art throughout the redesign: a frosted
+   rounded square holding vertical bars. The actively-playing tile glows gold
+   and gently breathes; everything else is muted and still.
+   ════════════════════════════════════════════════════════════════════════ */
+function Equalizer({
+  tile,
+  radius,
+  gap,
+  padBottom,
+  barWidth,
+  bars,
+  color,
+  animate,
+  surface
+}: {
+  tile: number;
+  radius: number;
+  gap: number;
+  padBottom: number;
+  barWidth: number;
+  bars: number[];
+  color: string | string[];
+  animate?: boolean;
+  surface?: CSSProperties;
+}) {
+  return (
+    <div
+      className={`flex shrink-0 items-end justify-center ${animate ? "eq-anim" : ""}`}
+      style={{
+        width: tile,
+        height: tile,
+        gap,
+        paddingBottom: padBottom,
+        borderRadius: radius,
+        background: "rgba(255,255,255,.06)",
+        border: "1px solid rgba(255,255,255,.09)",
+        ...surface
+      }}
+    >
+      {bars.map((height, index) => (
+        <span
+          key={index}
+          className="eq-bar"
+          style={{
+            width: barWidth,
+            height,
+            borderRadius: 2,
+            background: Array.isArray(color) ? color[index % color.length] : color
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** The small tile shown in track rows and the player bar. */
+function TrackTile({ playing, size }: { playing: boolean; size: "row" | "bar" }) {
+  if (size === "bar") {
+    return (
+      <Equalizer
+        tile={52}
+        radius={12}
+        gap={3}
+        padBottom={15}
+        barWidth={3.5}
+        bars={[16, 9, 22, 13]}
+        color={ACCENT}
+        animate={playing}
+      />
+    );
+  }
+  return playing ? (
+    <Equalizer tile={42} radius={11} gap={2.5} padBottom={12} barWidth={3} bars={[14, 8, 18, 11]} color={ACCENT} animate />
+  ) : (
+    <Equalizer
+      tile={42}
+      radius={11}
+      gap={2.5}
+      padBottom={12}
+      barWidth={3}
+      bars={[9, 15, 11, 17]}
+      color="rgba(255,255,255,.38)"
+    />
+  );
+}
+
+/** Gold-filled range slider whose fill follows the current value. */
 function Slider({
   value,
   max,
   step,
   disabled,
+  plain,
   onChange,
   className
 }: {
@@ -73,6 +165,7 @@ function Slider({
   max: number;
   step?: number;
   disabled?: boolean;
+  plain?: boolean;
   onChange: (value: number) => void;
   className?: string;
 }) {
@@ -81,7 +174,7 @@ function Slider({
   return (
     <input
       type="range"
-      className={`amp-range w-full ${className ?? ""}`}
+      className={`amp-range ${plain ? "amp-range-plain" : ""} w-full ${className ?? ""}`}
       style={{ "--pct": pct } as CSSProperties}
       min={0}
       max={safeMax}
@@ -90,18 +183,6 @@ function Slider({
       disabled={disabled}
       onChange={(event) => onChange(Number(event.target.value))}
     />
-  );
-}
-
-function AlbumArt({ track, size }: { track?: Track; size: "sm" | "lg" }) {
-  const dimension = size === "lg" ? "h-14 w-14" : "h-11 w-11";
-  const iconSize = size === "lg" ? "h-7 w-7" : "h-5 w-5";
-  return (
-    <div
-      className={`${dimension} grid shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm ring-1 ring-black/[0.06]`}
-    >
-      {track ? <Music2 className={iconSize} /> : <Disc3 className={iconSize} />}
-    </div>
   );
 }
 
@@ -117,46 +198,53 @@ function RenameDialog({ track, onClose }: { track: Track; onClose: () => void })
   };
 
   const renamesFile = track.sourceType === "downloaded_file";
+  const inputClass =
+    "mb-3 w-full rounded-xl field-sunken px-3 py-2 text-white outline-none placeholder:text-white/35";
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="glass-strong amp-pop w-full max-w-md rounded-2xl border border-black/[0.07] p-5"
+        className="glass-strong amp-pop w-full max-w-md rounded-3xl p-6"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Edit track</h2>
-          <button className="rounded-lg p-1 text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-900" onClick={onClose} aria-label="Close">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="ff-display text-lg font-bold text-white">Edit track</h2>
+          <button
+            className="rounded-lg p-1 text-white/45 transition hover:bg-white/[0.08] hover:text-white"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <X />
           </button>
         </div>
-        <label className="mb-1 block text-sm text-zinc-500">Title</label>
+        <label className="mb-1.5 block text-sm text-white/55">Title</label>
         <input
           autoFocus
-          className="mb-3 w-full rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2 outline-none focus:border-violet-500"
+          className={inputClass}
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && submit()}
         />
-        <label className="mb-1 block text-sm text-zinc-500">Artist</label>
+        <label className="mb-1.5 block text-sm text-white/55">Artist</label>
         <input
-          className="mb-2 w-full rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2 outline-none focus:border-violet-500"
+          className={inputClass}
           value={artist}
           onChange={(event) => setArtist(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && submit()}
         />
         {renamesFile && (
-          <p className="mb-4 text-xs text-zinc-400">The downloaded file on disk will be renamed to match.</p>
+          <p className="mb-4 text-xs text-white/40">The downloaded file on disk will be renamed to match.</p>
         )}
-        <div className="mt-2 flex justify-end gap-2">
-          <button className="rounded-lg px-4 py-2 text-zinc-700 hover:bg-black/[0.05]" onClick={onClose}>
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            className="rounded-xl px-4 py-2 text-white/75 transition hover:bg-white/[0.08]"
+            onClick={onClose}
+          >
             Cancel
           </button>
           <button
-            className="rounded-lg bg-violet-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="accent-glow rounded-xl px-5 py-2 font-bold text-white transition hover:brightness-110 disabled:opacity-50"
+            style={{ background: ACCENT }}
             disabled={!title.trim()}
             onClick={submit}
           >
@@ -167,6 +255,8 @@ function RenameDialog({ track, onClose }: { track: Track; onClose: () => void })
     </div>
   );
 }
+
+const ROW_COLUMNS = "46px 1fr 150px 44px 56px auto";
 
 function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) => void }) {
   const playback = useAppStore((state) => state.playback);
@@ -185,66 +275,65 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
   const downloadPct =
     progress && progress.totalBytes ? Math.round((progress.progressBytes / progress.totalBytes) * 100) : null;
 
+  const action =
+    "grid h-7 w-7 place-items-center rounded-lg text-white/45 opacity-0 transition hover:bg-white/[0.1] hover:text-white group-hover:opacity-100 disabled:opacity-30 [&_svg]:h-[15px] [&_svg]:w-[15px]";
+
   return (
     <div
-      className={[
-        "group flex items-center gap-3 rounded-lg px-2 py-1.5 transition",
-        isActive ? "bg-violet-600/[0.07]" : "hover:bg-black/[0.04]",
-        track.missing ? "opacity-60" : ""
-      ].join(" ")}
+      className={`group grid items-center gap-4 px-7 py-[9px] transition ${track.missing ? "opacity-50" : ""}`}
+      style={{ gridTemplateColumns: ROW_COLUMNS, borderBottom: "1px solid rgba(255,255,255,.05)" }}
+      onMouseEnter={(event) => (event.currentTarget.style.background = "rgba(255,255,255,.06)")}
+      onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
     >
       <button
-        className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl"
+        className="relative grid place-items-center justify-self-center rounded-[11px]"
         onClick={() => (isActive ? togglePlay() : playTrack(track.id))}
         title={isPlaying ? "Pause" : "Play"}
         type="button"
       >
-        <AlbumArt track={track} size="sm" />
+        <TrackTile playing={isPlaying} size="row" />
         <span
-          className={`absolute inset-0 grid place-items-center rounded-xl bg-black/35 text-white transition ${
-            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          className={`absolute inset-0 grid place-items-center rounded-[11px] bg-black/45 text-white transition ${
+            isActive ? "opacity-0" : "opacity-0 group-hover:opacity-100"
           }`}
         >
-          {isPlaying ? <Pause className="h-[18px] w-[18px]" /> : <Play className="h-[18px] w-[18px] translate-x-[1px]" />}
+          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-[1px]" />}
         </span>
       </button>
 
-      <button className="grid min-w-0 flex-1 gap-0.5 text-left" onClick={() => playTrack(track.id)} type="button">
-        <span className={`truncate text-[0.92rem] font-medium ${isActive ? "text-violet-700" : "text-zinc-900"}`}>
+      <button className="grid min-w-0 gap-0.5 text-left" onClick={() => playTrack(track.id)} type="button">
+        <span
+          className="truncate text-[15px] font-semibold"
+          style={{ color: isActive ? ACCENT : "#fff" }}
+        >
           {track.title}
         </span>
-        <span className="truncate text-[0.8rem] text-zinc-500">
+        <span className="truncate text-[12.5px] text-white/50">
           {track.artist ?? "Unknown artist"}
           {track.missing ? " · Missing" : ""}
         </span>
       </button>
 
-      {isDownloading && (
-        <span className="text-xs tabular-nums text-violet-600">{downloadPct !== null ? `${downloadPct}%` : "…"}</span>
-      )}
+      <span className="truncate text-[12px] text-white/40">{track.album ?? sourceLabel(track)}</span>
 
-      <span className={`hidden rounded-md px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide sm:inline ${sourceBadgeClass(track)}`}>
-        {sourceLabel(track)}
-      </span>
+      <div className="flex justify-center" title={sourceLabel(track)}>
+        {isDownloading ? (
+          <span className="ff-mono text-[11px]" style={{ color: ACCENT }}>
+            {downloadPct !== null ? `${downloadPct}%` : "…"}
+          </span>
+        ) : isOffline(track) ? (
+          <span className="h-[7px] w-[7px] rounded-full bg-white/45" />
+        ) : (
+          <span className="h-[7px] w-[7px] rounded-full border-[1.5px] border-white/30" />
+        )}
+      </div>
 
-      <span className="w-10 text-right text-[0.8rem] tabular-nums text-zinc-400">
-        {formatSeconds(track.durationSeconds)}
-      </span>
+      <span className="ff-mono text-right text-[12px] text-white/50">{formatSeconds(track.durationSeconds)}</span>
 
-      <div className="flex items-center gap-0.5">
-        <button
-          className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${
-            track.favorite ? "text-violet-600" : "text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-zinc-800"
-          }`}
-          onClick={() => toggleFavorite(track.id)}
-          title={track.favorite ? "Remove from favorites" : "Add to favorites"}
-          type="button"
-        >
-          <Heart className={track.favorite ? "fill-current" : ""} />
-        </button>
+      <div className="flex items-center justify-end gap-0.5">
         {track.sourceType === "remote_url" && (
           <button
-            className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-black/[0.05] hover:text-zinc-800 group-hover:opacity-100 disabled:opacity-40"
+            className={action}
             disabled={busy || isDownloading}
             onClick={() => downloadTrack(track.id)}
             title="Download for offline"
@@ -253,18 +342,17 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
             {isDownloading ? <Loader2 className="animate-spin" /> : <HardDriveDownload />}
           </button>
         )}
-        <button
-          className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-black/[0.05] hover:text-zinc-800 group-hover:opacity-100"
-          onClick={() => onRename(track)}
-          title="Edit title / artist"
-          type="button"
-        >
+        <button className={action} onClick={() => onRename(track)} title="Edit title / artist" type="button">
           <Pencil />
         </button>
         <button
-          className="rounded-lg p-1.5 text-zinc-400 opacity-0 transition hover:bg-black/[0.05] hover:text-rose-600 group-hover:opacity-100"
+          className={`${action} hover:!text-rose-400`}
           onClick={() => {
-            if (window.confirm(`Remove "${track.title}" from AmpStack? Local files stay on disk; app-downloaded copies are deleted.`)) {
+            if (
+              window.confirm(
+                `Remove "${track.title}" from AmpStack? Local files stay on disk; app-downloaded copies are deleted.`
+              )
+            ) {
               deleteTrack(track.id);
             }
           }}
@@ -272,6 +360,17 @@ function TrackRow({ track, onRename }: { track: Track; onRename: (track: Track) 
           type="button"
         >
           <Trash2 />
+        </button>
+        <button
+          className={`grid h-7 w-7 place-items-center rounded-lg transition hover:bg-white/[0.1] [&_svg]:h-[15px] [&_svg]:w-[15px] ${
+            track.favorite ? "" : "text-white/35 opacity-0 hover:text-white group-hover:opacity-100"
+          }`}
+          style={track.favorite ? { color: ACCENT } : undefined}
+          onClick={() => toggleFavorite(track.id)}
+          title={track.favorite ? "Remove from favorites" : "Add to favorites"}
+          type="button"
+        >
+          <Heart className={track.favorite ? "fill-current" : ""} />
         </button>
       </div>
     </div>
@@ -297,32 +396,53 @@ function useIsMaximized() {
   return maximized;
 }
 
+/** The little gold logo mark used in the title bar and sidebar. */
+function LogoMark({ size }: { size: number }) {
+  return (
+    <div
+      className="grid place-items-center"
+      style={{ width: size, height: size, borderRadius: size * 0.29, background: ACCENT }}
+    >
+      <span
+        className="rounded-full border-white"
+        style={{ width: size * 0.34, height: size * 0.34, borderWidth: Math.max(1.5, size * 0.05) }}
+      />
+    </div>
+  );
+}
+
 /** Custom window frame: a draggable bar with min / maximize / close controls,
  *  so we get a consistent look instead of the dated GTK title bar on Linux. */
 function TitleBar() {
   const appWindow = useMemo(() => getCurrentWindow(), []);
   const maximized = useIsMaximized();
 
-  const control = "grid h-8 w-12 place-items-center text-zinc-500 transition hover:bg-black/[0.06] hover:text-zinc-900";
+  const control = "grid h-8 w-12 place-items-center text-white/45 transition hover:bg-white/[0.08] hover:text-white";
 
   return (
     <div
       data-tauri-drag-region
-      className="glass flex h-9 shrink-0 select-none items-center justify-between border-b border-black/[0.06]"
+      className="flex h-[46px] shrink-0 select-none items-center justify-between px-2"
+      style={{ borderBottom: "1px solid rgba(255,255,255,.05)" }}
     >
-      <div data-tauri-drag-region className="flex items-center gap-2 pl-3 text-xs font-medium text-zinc-400">
-        <Disc3 className="h-3.5 w-3.5 text-violet-600" />
-        <span>AmpStack</span>
+      <div data-tauri-drag-region className="flex items-center gap-2.5 pl-2">
+        <LogoMark size={18} />
+        <span className="ff-display text-[13px] font-bold text-white">AmpStack</span>
       </div>
       <div className="flex items-stretch">
         <button className={control} onClick={() => appWindow.minimize()} title="Minimize" type="button">
           <Minus className="h-4 w-4" />
         </button>
-        <button className={control} onClick={() => appWindow.toggleMaximize()} title={maximized ? "Restore" : "Maximize"} type="button">
+        <button
+          className={control}
+          onClick={() => appWindow.toggleMaximize()}
+          title={maximized ? "Restore" : "Maximize"}
+          type="button"
+        >
           {maximized ? <Copy className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
         </button>
         <button
-          className="grid h-8 w-12 place-items-center text-zinc-500 transition hover:bg-rose-500/80 hover:text-white"
+          className="grid h-8 w-12 place-items-center text-white/45 transition hover:bg-rose-500/80 hover:text-white"
           onClick={() => appWindow.close()}
           title="Close"
           type="button"
@@ -339,7 +459,6 @@ function TitleBar() {
 function ResizeHandles() {
   const appWindow = useMemo(() => getCurrentWindow(), []);
 
-  // [direction, positioning + cursor classes]
   const grips: Array<[Parameters<typeof appWindow.startResizeDragging>[0], string]> = [
     ["North", "top-0 left-2 right-2 h-1 cursor-ns-resize"],
     ["South", "bottom-0 left-2 right-2 h-1 cursor-ns-resize"],
@@ -382,14 +501,14 @@ function NavButton({
 }) {
   return (
     <button
-      className={`relative flex w-full items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left text-[0.9rem] font-medium transition ${
-        active ? "bg-violet-600/10 text-violet-700" : "text-zinc-500 hover:bg-black/[0.04] hover:text-zinc-900"
+      className={`flex h-11 w-full items-center gap-3 rounded-[13px] px-3.5 text-left text-[14.5px] transition ${
+        active ? "font-bold text-white" : "font-medium text-white/60 hover:bg-white/[0.06] hover:text-white"
       }`}
+      style={active ? { background: "rgba(200,149,76,.15)", border: "1px solid rgba(255,255,255,.18)" } : undefined}
       onClick={onClick}
       type="button"
     >
-      {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-violet-600" />}
-      <span className={active ? "text-violet-600" : "text-zinc-400"}>{icon}</span>
+      {icon}
       <span className="flex-1">{label}</span>
       {badge}
     </button>
@@ -407,18 +526,19 @@ function Sidebar() {
   const favoriteCount = useMemo(() => tracks.filter((track) => track.favorite).length, [tracks]);
 
   const addButton =
-    "flex items-center gap-2.5 rounded-lg border border-black/[0.06] bg-black/[0.03] px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-violet-500/50 hover:bg-violet-600/[0.06] hover:text-violet-700";
+    "flex h-[42px] items-center gap-3 rounded-xl px-3.5 text-[13.5px] font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white";
 
   return (
-    <aside className="glass flex w-60 shrink-0 flex-col gap-7 border-r border-black/[0.06] px-3 py-5">
-      <div className="flex items-center gap-2.5 px-2">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-500/30">
-          <Disc3 className="h-5 w-5" />
-        </div>
-        <span className="text-[1.05rem] font-bold tracking-tight">AmpStack</span>
+    <aside
+      className="flex w-[236px] shrink-0 flex-col px-4 py-6"
+      style={{ background: "rgba(255,255,255,.035)", borderRight: "1px solid rgba(255,255,255,.08)" }}
+    >
+      <div className="flex items-center gap-3 px-1.5 pb-6">
+        <LogoMark size={38} />
+        <span className="ff-display text-[20px] font-extrabold tracking-tight text-white">AmpStack</span>
       </div>
 
-      <nav className="grid gap-0.5">
+      <nav className="flex flex-col gap-1">
         <NavButton
           active={view === "library" && sourceFilter !== "favorites"}
           icon={<Library className="h-[18px] w-[18px]" />}
@@ -432,7 +552,7 @@ function Sidebar() {
           active={view === "library" && sourceFilter === "favorites"}
           icon={<Heart className="h-[18px] w-[18px]" />}
           label="Favorites"
-          badge={favoriteCount > 0 ? <span className="text-xs tabular-nums text-zinc-400">{favoriteCount}</span> : undefined}
+          badge={<span className="ff-mono text-[11px] text-white/40">{favoriteCount}</span>}
           onClick={() => {
             setView("library");
             setSourceFilter("favorites");
@@ -446,14 +566,24 @@ function Sidebar() {
         />
       </nav>
 
-      <div className="mt-auto grid gap-2">
-        <p className="px-2 text-[0.7rem] font-semibold uppercase tracking-wider text-zinc-400">Add music</p>
-        <button className={addButton} onClick={addFolders} type="button">
-          <FolderPlus className="h-[18px] w-[18px] text-zinc-400" />
+      <div className="mt-auto flex flex-col gap-2">
+        <p className="ff-mono px-1.5 pb-1 text-[10.5px] uppercase tracking-[0.08em] text-white/35">Add music</p>
+        <button
+          className={addButton}
+          style={{ border: "1px solid rgba(255,255,255,.12)" }}
+          onClick={addFolders}
+          type="button"
+        >
+          <FolderPlus className="h-4 w-4" />
           <span>Add folder</span>
         </button>
-        <button className={addButton} onClick={importFiles} type="button">
-          <Import className="h-[18px] w-[18px] text-zinc-400" />
+        <button
+          className={addButton}
+          style={{ border: "1px solid rgba(255,255,255,.12)" }}
+          onClick={importFiles}
+          type="button"
+        >
+          <Import className="h-4 w-4" />
           <span>Import files</span>
         </button>
       </div>
@@ -480,88 +610,139 @@ function LibraryView({ onRename }: { onRename: (track: Track) => void }) {
   const busy = useAppStore((state) => state.busy);
   const error = useAppStore((state) => state.error);
   const addRemote = useAppStore((state) => state.addRemote);
+  const downloadExternalSource = useAppStore((state) => state.downloadExternalSource);
   const [url, setUrl] = useState("");
+  const [ytdlp, setYtdlp] = useState<YtDlpStatus | null>(null);
+
+  useEffect(() => {
+    checkYtDlp().then(setYtdlp).catch(() => setYtdlp(null));
+  }, []);
+
+  const title = sourceFilter === "favorites" ? "Favorites" : "All Tracks";
+  const canDownload = Boolean(url.trim()) && ytdlp?.available !== false;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="glass flex flex-col gap-3 border-b border-black/[0.06] px-6 py-4">
-        <div className="flex items-center gap-3">
-          <label className="flex h-10 flex-1 items-center gap-2 rounded-xl field px-3">
-            <Search className="h-[18px] w-[18px] text-zinc-400" />
-            <input
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-400"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by title, artist, album…"
-            />
-          </label>
-          <form
-            className="flex h-10 items-center gap-2 rounded-xl field px-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              addRemote(url);
+      <div className="flex items-end justify-between px-7 pb-[18px] pt-6">
+        <div>
+          <div className="ff-mono mb-1.5 text-[11px] uppercase tracking-[0.14em]" style={{ color: "#d8b27a" }}>
+            Your Music
+          </div>
+          <h1 className="ff-display text-[34px] font-extrabold leading-none tracking-[-0.025em] text-white">{title}</h1>
+        </div>
+        <form
+          className="field flex h-11 w-[360px] items-center gap-2 rounded-[13px] py-0 pl-4 pr-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addRemote(url);
+            setUrl("");
+          }}
+        >
+          <Link2 className="h-[15px] w-[15px] text-white/45" />
+          <input
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/45"
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="Paste audio URL"
+          />
+          <button
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] text-white/70 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-35"
+            type="button"
+            disabled={!canDownload}
+            onClick={() => {
+              downloadExternalSource(url, true);
               setUrl("");
             }}
+            title={
+              ytdlp?.available === false
+                ? "yt-dlp not found — install it to download for offline"
+                : "Download for offline (yt-dlp)"
+            }
           >
-            <Link2 className="h-[18px] w-[18px] text-zinc-400" />
-            <input
-              className="w-56 min-w-0 bg-transparent outline-none placeholder:text-zinc-400"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="Paste audio URL"
-            />
-            <button
-              className="flex items-center gap-1 rounded-lg bg-violet-600/10 px-2.5 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
-              type="submit"
-            >
-              <Download className="h-4 w-4" />
-              Add
-            </button>
-          </form>
-        </div>
+            <HardDriveDownload className="h-[16px] w-[16px]" />
+          </button>
+          <button
+            className="accent-glow flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] px-4 text-[12.5px] font-bold text-white transition hover:brightness-110 disabled:opacity-40"
+            style={{ background: ACCENT }}
+            type="submit"
+            disabled={!url.trim()}
+          >
+            <Plus className="h-3 w-3" strokeWidth={2.6} />
+            Add
+          </button>
+        </form>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              className={`rounded-full px-3 py-1 text-[0.82rem] font-medium transition ${
-                sourceFilter === filter.value
-                  ? "bg-violet-600 text-white shadow-sm shadow-violet-500/30"
-                  : "bg-black/[0.04] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-900"
-              }`}
-              onClick={() => setSourceFilter(filter.value)}
-              type="button"
-            >
-              {filter.label}
-            </button>
-          ))}
-          <span className="ml-auto text-[0.82rem] tabular-nums text-zinc-400">
-            {busy ? "Working…" : `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}`}
-          </span>
+      <div className="px-7 pb-4">
+        <label className="field flex h-[46px] items-center gap-3 rounded-2xl px-4">
+          <Search className="h-[17px] w-[17px] text-white/50" />
+          <input
+            className="min-w-0 flex-1 bg-transparent text-[14px] text-white outline-none placeholder:text-white/45"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by title, artist, album…"
+          />
+        </label>
+      </div>
+
+      <div className="flex items-center justify-between px-7 pb-3.5">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((filter) => {
+            const active = sourceFilter === filter.value;
+            return (
+              <button
+                key={filter.value}
+                className={`rounded-[10px] px-[15px] py-[7px] text-[12.5px] transition ${
+                  active ? "font-bold text-white" : "font-medium text-white/60 hover:text-white"
+                }`}
+                style={active ? { background: ACCENT } : { border: "1px solid rgba(255,255,255,.12)" }}
+                onClick={() => setSourceFilter(filter.value)}
+                type="button"
+              >
+                {filter.label}
+              </button>
+            );
+          })}
         </div>
-      </header>
+        <span className="ff-mono shrink-0 pl-3 text-[12px] text-white/45">
+          {busy ? "Working…" : `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}`}
+        </span>
+      </div>
 
       {error && (
-        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          <XCircle className="h-4 w-4" />
+        <div className="mx-7 mb-3 flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/15 px-3.5 py-2.5 text-sm text-rose-200">
+          <XCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+      <div
+        className="grid items-center gap-4 px-7 pb-2.5"
+        style={{ gridTemplateColumns: ROW_COLUMNS, borderBottom: "1px solid rgba(255,255,255,.09)" }}
+      >
+        {(["#", "Title", "Source", "Sync", "Time"] as const).map((label, index) => (
+          <span
+            key={label}
+            className={`ff-mono text-[10.5px] uppercase tracking-[0.06em] text-white/30 ${
+              index === 0 ? "text-center" : index === 3 ? "text-center" : index === 4 ? "text-right" : ""
+            }`}
+          >
+            {label}
+          </span>
+        ))}
+        <span />
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto">
         {tracks.length === 0 ? (
-          <div className="grid h-full place-items-center text-center text-zinc-400">
+          <div className="grid h-full place-items-center text-center text-white/40">
             <div className="grid justify-items-center gap-3">
-              <Disc3 className="h-10 w-10 text-zinc-300" />
+              <Disc3 className="h-10 w-10 text-white/20" />
               <p>{busy ? "Loading your library…" : "No tracks here yet. Add a folder, import files, or paste an audio URL."}</p>
             </div>
           </div>
         ) : (
-          <div className="grid gap-0.5">
-            {tracks.map((track) => (
-              <TrackRow track={track} key={track.id} onRename={onRename} />
-            ))}
-          </div>
+          tracks.map((track) => <TrackRow track={track} key={track.id} onRename={onRename} />)
         )}
       </div>
     </div>
@@ -580,28 +761,33 @@ function SettingsView() {
   const removeRoot = useAppStore((state) => state.removeRoot);
   const addFolders = useAppStore((state) => state.addFolders);
   const busy = useAppStore((state) => state.busy);
-  const downloadExternalSource = useAppStore((state) => state.downloadExternalSource);
 
-  const [externalUrl, setExternalUrl] = useState("");
-  const [ytdlp, setYtdlp] = useState<YtDlpStatus | null>(null);
-
-  useEffect(() => {
-    checkYtDlp().then(setYtdlp).catch(() => setYtdlp(null));
-  }, []);
-
-  const card = "glass rounded-2xl p-5";
+  const cardClass = "card rounded-[18px] p-6";
+  const heading = "ff-display text-[18px] font-bold text-white";
+  const body = "text-[13.5px] leading-relaxed text-white/55";
+  const pathRow = "field-sunken flex h-12 items-center gap-3 rounded-xl py-0 pl-3.5 pr-2";
+  const pathText = "ff-mono min-w-0 flex-1 truncate text-[13px] text-white/85";
+  const changeButton =
+    "h-[34px] shrink-0 rounded-[9px] px-4 text-[12.5px] font-semibold transition hover:bg-white/[0.16]";
+  const accentButton =
+    "accent-glow flex h-9 items-center gap-2 rounded-[10px] px-4 text-[12.5px] font-bold text-white transition hover:brightness-110";
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-6 py-6">
-      <div className="mx-auto grid max-w-2xl gap-5">
-        <h1 className="text-2xl font-bold">Settings</h1>
+    <div className="min-h-0 flex-1 overflow-auto px-8 pb-3 pt-9">
+      <div className="mx-auto flex w-full max-w-[760px] flex-col gap-[22px]">
+        <div>
+          <div className="ff-mono mb-1.5 text-[11px] uppercase tracking-[0.14em]" style={{ color: "#d8b27a" }}>
+            Preferences
+          </div>
+          <h1 className="ff-display text-[36px] font-extrabold leading-none tracking-[-0.025em] text-white">Settings</h1>
+        </div>
 
         {restartRequired && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex items-center gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
             <RotateCcw className="h-4 w-4 shrink-0" />
             <span className="flex-1">Data folder changed. Restart AmpStack to use the new location.</span>
             <button
-              className="rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-800 transition hover:bg-amber-500/30"
+              className="rounded-lg bg-amber-400/20 px-3 py-1 font-medium text-amber-100 transition hover:bg-amber-400/30"
               onClick={restartApp}
               type="button"
             >
@@ -610,41 +796,50 @@ function SettingsView() {
           </div>
         )}
 
-        <section className={card}>
-          <div className="mb-1 flex items-center gap-2">
-            <h2 className="font-semibold">Data folder</h2>
-            <span className="rounded-md bg-violet-600/10 px-2 py-0.5 text-[0.7rem] font-medium text-violet-600">Sync</span>
+        <section className={cardClass}>
+          <div className="mb-2 flex items-center gap-2.5">
+            <h2 className={heading}>Data folder</h2>
+            <span
+              className="ff-mono rounded-md px-2.5 py-[3px] text-[10px] uppercase tracking-[0.06em] text-white"
+              style={{ background: ACCENT }}
+            >
+              Sync
+            </span>
           </div>
-          <p className="mb-3 text-sm text-zinc-400">
-            Holds your library database and downloads. Point this at a synced folder (Syncthing, Dropbox, etc.) to share your
-            music across devices. Existing data is copied over; takes effect after a restart.
+          <p className={`${body} mb-4`}>
+            Holds your library database and downloads. Point this at a synced folder (Syncthing, Dropbox, etc.) to share
+            your music across devices. Existing data is copied over; takes effect after a restart.
           </p>
-          <div className="flex items-center gap-3 rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2">
-            <FolderOpen className="h-[18px] w-[18px] text-violet-600" />
-            <span className="min-w-0 flex-1 truncate text-sm text-zinc-700" title={settings?.dataDir}>
+          <div className={pathRow}>
+            <FolderOpen className="h-[17px] w-[17px]" style={{ color: ACCENT }} />
+            <span className={pathText} title={settings?.dataDir}>
               {settings?.dataDir ?? "…"}
             </span>
             <button
-              className="rounded-lg bg-violet-600/10 px-3 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
+              className={changeButton}
+              style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.16)", color: "#e3cda6" }}
               onClick={changeDataDir}
               type="button"
             >
               Change
             </button>
           </div>
-          <p className="mt-2 text-xs text-zinc-400">Tip: only run AmpStack on one device at a time when syncing, to avoid database conflicts.</p>
+          <p className="mt-3 text-[12px] text-white/40">
+            Tip: only run AmpStack on one device at a time when syncing, to avoid database conflicts.
+          </p>
         </section>
 
-        <section className={card}>
-          <h2 className="mb-1 font-semibold">Downloads folder</h2>
-          <p className="mb-3 text-sm text-zinc-400">Where downloaded songs are saved. Files are named after the song.</p>
-          <div className="flex items-center gap-3 rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2">
-            <FolderOpen className="h-[18px] w-[18px] text-violet-600" />
-            <span className="min-w-0 flex-1 truncate text-sm text-zinc-700" title={settings?.downloadsDir}>
+        <section className={cardClass}>
+          <h2 className={`${heading} mb-1.5`}>Downloads folder</h2>
+          <p className={`${body} mb-4`}>Where downloaded songs are saved. Files are named after the song.</p>
+          <div className={pathRow}>
+            <FolderOpen className="h-[17px] w-[17px]" style={{ color: ACCENT }} />
+            <span className={pathText} title={settings?.downloadsDir}>
               {settings?.downloadsDir ?? "…"}
             </span>
             <button
-              className="rounded-lg bg-violet-600/10 px-3 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
+              className={changeButton}
+              style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.16)", color: "#e3cda6" }}
               onClick={changeDownloadsDir}
               type="button"
             >
@@ -653,33 +848,53 @@ function SettingsView() {
           </div>
         </section>
 
-        <section className={card}>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Library folders</h2>
-            <button
-              className="flex items-center gap-2 rounded-lg bg-violet-600/10 px-3 py-1 text-sm text-violet-700 transition hover:bg-violet-600/20"
-              onClick={addFolders}
-              type="button"
-            >
-              <FolderPlus className="h-4 w-4" /> Add folder
+        <section className={cardClass}>
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <h2 className={heading}>Library folders</h2>
+            <button className={accentButton} style={{ background: ACCENT }} onClick={addFolders} type="button">
+              <FolderPlus className="h-3.5 w-3.5" /> Add folder
             </button>
           </div>
           {libraryRoots.length === 0 ? (
-            <p className="text-sm text-zinc-400">No folders yet. Add one to scan your music.</p>
+            <div
+              className="flex items-center gap-3 rounded-xl px-4 py-[18px] text-[13.5px] text-white/50"
+              style={{ border: "1px dashed rgba(255,255,255,.16)", background: "rgba(255,255,255,.02)" }}
+            >
+              <Plus className="h-[17px] w-[17px] text-white/40" />
+              No folders yet. Add one to scan your music.
+            </div>
           ) : (
             <div className="grid gap-2">
               {libraryRoots.map((root) => (
-                <div key={root.id} className="flex items-center gap-2 rounded-lg border border-black/[0.07] bg-white/60 px-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-sm text-zinc-700" title={root.path}>
+                <div key={root.id} className="field-sunken flex items-center gap-2 rounded-xl px-3.5 py-2.5">
+                  <span className="ff-mono min-w-0 flex-1 truncate text-[13px] text-white/80" title={root.path}>
                     {root.path}
                   </span>
-                  <button className="rounded-lg p-1.5 text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" disabled={busy} onClick={() => rescanRoot(root.id)} title="Rescan" type="button">
+                  <button
+                    className="grid h-8 w-8 place-items-center rounded-lg text-white/55 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => rescanRoot(root.id)}
+                    title="Rescan"
+                    type="button"
+                  >
                     <RefreshCcw className="h-4 w-4" />
                   </button>
-                  <button className="rounded-lg p-1.5 text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" disabled={busy} onClick={() => relinkRoot(root.id)} title="Locate this folder on this device (fixes missing tracks after syncing)" type="button">
+                  <button
+                    className="grid h-8 w-8 place-items-center rounded-lg text-white/55 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => relinkRoot(root.id)}
+                    title="Locate this folder on this device (fixes missing tracks after syncing)"
+                    type="button"
+                  >
                     <Link2 className="h-4 w-4" />
                   </button>
-                  <button className="rounded-lg p-1.5 text-zinc-500 hover:bg-black/[0.05] hover:text-rose-600 disabled:opacity-40" disabled={busy} onClick={() => removeRoot(root.id)} title="Remove" type="button">
+                  <button
+                    className="grid h-8 w-8 place-items-center rounded-lg text-white/55 transition hover:bg-white/[0.1] hover:text-rose-400 disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => removeRoot(root.id)}
+                    title="Remove"
+                    type="button"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -687,51 +902,13 @@ function SettingsView() {
             </div>
           )}
         </section>
-
-        <section className={card}>
-          <div className="mb-1 flex items-center justify-between">
-            <h2 className="font-semibold">Download from an external source</h2>
-            {ytdlp && (
-              <span className={`flex items-center gap-1 text-xs ${ytdlp.available ? "text-emerald-600" : "text-rose-600"}`}>
-                {ytdlp.available ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                yt-dlp {ytdlp.available ? ytdlp.version ?? "ready" : "not found"}
-              </span>
-            )}
-          </div>
-          <p className="mb-3 text-sm text-zinc-400">Uses yt-dlp + ffmpeg. The saved file is named after the song.</p>
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (busy || !externalUrl.trim()) return;
-              downloadExternalSource(externalUrl, true);
-              setExternalUrl("");
-            }}
-          >
-            <div className="flex items-center gap-2 rounded-lg field px-3 py-2">
-              <HardDriveDownload className="h-[18px] w-[18px] text-zinc-400" />
-              <input
-                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-400"
-                value={externalUrl}
-                onChange={(event) => setExternalUrl(event.target.value)}
-                placeholder="External source URL"
-              />
-            </div>
-            <button
-              className="flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-40"
-              disabled={busy || !externalUrl.trim()}
-              type="submit"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-              Download
-            </button>
-          </form>
-        </section>
       </div>
     </div>
   );
 }
 
+/** The 90px transport strip that lives at the foot of the library / settings
+ *  content. Clicking the now-playing card opens the full Now Playing view. */
 function PlayerBar() {
   const playback = useAppStore((state) => state.playback);
   const activeTrack = useAppStore(selectActiveTrack);
@@ -745,89 +922,315 @@ function PlayerBar() {
   const repeat = useAppStore((state) => state.repeat);
   const toggleShuffle = useAppStore((state) => state.toggleShuffle);
   const cycleRepeat = useAppStore((state) => state.cycleRepeat);
+  const setView = useAppStore((state) => state.setView);
 
   const isPlaying = playback.status === "playing";
   const hasTrack = Boolean(playback.trackId);
   const duration = playback.durationSeconds ?? 0;
-
   const VolumeIcon = playback.volume === 0 ? VolumeX : playback.volume < 0.5 ? Volume1 : Volume2;
 
+  const ghost = "grid h-9 w-9 place-items-center rounded-lg text-white/75 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40";
+
   return (
-    <footer className="glass flex items-center gap-4 border-t border-black/[0.06] px-5 py-3">
-      {/* Now playing */}
-      <div className="flex w-[24%] min-w-0 items-center gap-3">
-        <AlbumArt track={activeTrack} size="lg" />
-        <div className="min-w-0">
-          <div className="truncate text-[0.95rem] font-semibold text-zinc-900">{activeTrack?.title ?? playback.title ?? "Nothing playing"}</div>
-          <div className="truncate text-[0.82rem] text-zinc-500">{activeTrack?.artist ?? (hasTrack ? "Unknown artist" : "Pick a track to start")}</div>
-        </div>
+    <div
+      className="grid h-[90px] shrink-0 items-center gap-5 px-6"
+      style={{
+        gridTemplateColumns: "1fr 1.3fr 1fr",
+        borderTop: "1px solid rgba(255,255,255,.09)",
+        background: "rgba(255,255,255,.05)"
+      }}
+    >
+      <div className="flex min-w-0 items-center gap-3.5">
+        <button
+          className="flex min-w-0 items-center gap-3.5 rounded-xl text-left transition hover:opacity-80 disabled:cursor-default"
+          onClick={() => hasTrack && setView("nowplaying")}
+          disabled={!hasTrack}
+          title={hasTrack ? "Open now playing" : undefined}
+          type="button"
+        >
+          <TrackTile playing={isPlaying} size="bar" />
+          <div className="min-w-0">
+            <div className="truncate text-[14px] font-semibold text-white">
+              {activeTrack?.title ?? playback.title ?? "Nothing playing"}
+            </div>
+            <div className="truncate text-[12px] text-white/50">
+              {activeTrack?.artist ?? (hasTrack ? "Unknown artist" : "Pick a track to start")}
+            </div>
+          </div>
+        </button>
         {activeTrack && (
           <button
-            className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${activeTrack.favorite ? "text-violet-600" : "text-zinc-400 hover:text-zinc-800"}`}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition hover:bg-white/[0.08]"
+            style={activeTrack.favorite ? { color: ACCENT } : { color: "rgba(255,255,255,.4)" }}
             onClick={() => toggleFavorite(activeTrack.id)}
             title={activeTrack.favorite ? "Remove from favorites" : "Add to favorites"}
             type="button"
           >
-            <Heart className={activeTrack.favorite ? "fill-current" : ""} />
+            <Heart className={`h-4 w-4 ${activeTrack.favorite ? "fill-current" : ""}`} />
           </button>
         )}
       </div>
 
-      {/* Transport + progress */}
-      <div className="flex flex-1 flex-col items-center gap-2">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col items-center gap-2.5">
+        <div className="flex items-center gap-[22px]">
           <button
-            className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${shuffle ? "text-violet-600" : "text-zinc-500 hover:text-zinc-900"}`}
+            className={ghost}
+            style={shuffle ? { color: ACCENT } : undefined}
             onClick={toggleShuffle}
             title="Shuffle"
             type="button"
           >
-            <Shuffle className="h-[18px] w-[18px]" />
+            <Shuffle className="h-[17px] w-[17px]" />
           </button>
-          <button className="rounded-lg p-1.5 text-zinc-700 transition hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" onClick={previous} disabled={!hasTrack} title="Previous" type="button">
-            <SkipBack className="h-5 w-5" />
+          <button className={ghost} onClick={previous} disabled={!hasTrack} title="Previous" type="button">
+            <SkipBack className="h-5 w-5 fill-current" />
           </button>
           <button
-            className="grid h-11 w-11 place-items-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-500/30 transition duration-150 hover:scale-105 hover:shadow-violet-500/50 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+            className="accent-glow grid h-[46px] w-[46px] place-items-center rounded-full text-white transition hover:brightness-110 active:scale-95 disabled:opacity-50"
+            style={{ background: ACCENT }}
             onClick={togglePlay}
             disabled={!hasTrack}
             title={isPlaying ? "Pause" : "Play"}
             type="button"
           >
-            {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 translate-x-[1px]" />}
+            {isPlaying ? <Pause className="h-[18px] w-[18px] fill-current" /> : <Play className="h-[18px] w-[18px] translate-x-[1px] fill-current" />}
           </button>
-          <button className="rounded-lg p-1.5 text-zinc-700 transition hover:bg-black/[0.05] hover:text-zinc-900 disabled:opacity-40" onClick={next} disabled={!hasTrack} title="Next" type="button">
-            <SkipForward className="h-5 w-5" />
+          <button className={ghost} onClick={next} disabled={!hasTrack} title="Next" type="button">
+            <SkipForward className="h-5 w-5 fill-current" />
           </button>
           <button
-            className={`rounded-lg p-1.5 transition hover:bg-black/[0.05] ${repeat !== "off" ? "text-violet-600" : "text-zinc-500 hover:text-zinc-900"}`}
+            className={ghost}
+            style={repeat !== "off" ? { color: ACCENT } : undefined}
             onClick={cycleRepeat}
             title={`Repeat: ${repeat}`}
             type="button"
           >
-            {repeat === "one" ? <Repeat1 className="h-[18px] w-[18px]" /> : <Repeat className="h-[18px] w-[18px]" />}
+            {repeat === "one" ? <Repeat1 className="h-[17px] w-[17px]" /> : <Repeat className="h-[17px] w-[17px]" />}
           </button>
         </div>
-        <div className="flex w-full max-w-xl items-center gap-3">
-          <span className="w-10 text-right text-xs tabular-nums text-zinc-400">{formatSeconds(playback.positionSeconds)}</span>
-          <Slider
-            value={playback.positionSeconds}
-            max={duration}
-            disabled={!hasTrack || duration === 0}
-            onChange={(value) => seek(value)}
-          />
-          <span className="w-10 text-xs tabular-nums text-zinc-400">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
+        <div className="flex w-full max-w-[540px] items-center gap-2.5">
+          <span className="ff-mono w-9 text-right text-[11px] text-white/45">{formatSeconds(playback.positionSeconds)}</span>
+          <Slider value={playback.positionSeconds} max={duration} disabled={!hasTrack || duration === 0} onChange={(value) => seek(value)} />
+          <span className="ff-mono w-9 text-[11px] text-white/45">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
         </div>
       </div>
 
-      {/* Volume */}
-      <div className="flex w-[24%] items-center justify-end gap-2">
-        <VolumeIcon className="h-[18px] w-[18px] text-zinc-400" />
-        <div className="w-28">
-          <Slider value={playback.volume} max={1} step={0.01} onChange={(value) => setVolume(value)} />
+      <div className="flex items-center justify-end gap-4 text-white/60">
+        <button
+          className={ghost}
+          onClick={() => hasTrack && setView("nowplaying")}
+          disabled={!hasTrack}
+          title="Queue"
+          type="button"
+        >
+          <ListMusic className="h-[17px] w-[17px]" />
+        </button>
+        <VolumeIcon className="h-4 w-4 text-white/60" />
+        <div className="w-[88px]">
+          <Slider value={playback.volume} max={1} step={0.01} plain onChange={(value) => setVolume(value)} />
         </div>
       </div>
-    </footer>
+    </div>
+  );
+}
+
+/** The Up Next + Lyrics rail on the right of the Now Playing view. */
+function QueuePanel() {
+  const queue = useAppStore((state) => state.queue);
+  const queueIndex = useAppStore((state) => state.queueIndex);
+  const tracks = useAppStore((state) => state.tracks);
+  const clearQueue = useAppStore((state) => state.clearQueue);
+  const playTrack = useAppStore((state) => state.playTrack);
+
+  const upNext = useMemo(
+    () =>
+      queue
+        .slice(queueIndex + 1)
+        .map((id) => tracks.find((track) => track.id === id))
+        .filter((track): track is Track => Boolean(track)),
+    [queue, queueIndex, tracks]
+  );
+
+  return (
+    <div
+      className="flex w-[340px] shrink-0 flex-col px-6 py-7"
+      style={{ borderLeft: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.04)" }}
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <span className="ff-display text-[17px] font-bold text-white">Up Next</span>
+        {upNext.length > 0 && (
+          <button
+            className="ff-mono text-[11px] text-white/40 transition hover:text-white"
+            onClick={clearQueue}
+            type="button"
+          >
+            CLEAR
+          </button>
+        )}
+      </div>
+
+      <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-auto px-1">
+        {upNext.length === 0 ? (
+          <p className="px-1 text-[13px] text-white/40">Nothing queued. Play a track to build a queue.</p>
+        ) : (
+          upNext.map((track, index) => (
+            <button
+              key={`${track.id}-${index}`}
+              className="flex items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-white/[0.06]"
+              onClick={() => playTrack(track.id)}
+              type="button"
+            >
+              <Equalizer
+                tile={40}
+                radius={10}
+                gap={2.5}
+                padBottom={11}
+                barWidth={3}
+                bars={[9, 15, 11]}
+                color="rgba(255,255,255,.38)"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13.5px] font-semibold text-white">{track.title}</div>
+                <div className="truncate text-[11.5px] text-white/50">{track.artist ?? "Unknown artist"}</div>
+              </div>
+              <span className="ff-mono text-[11px] text-white/40">{formatSeconds(track.durationSeconds)}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="card mt-4 rounded-2xl p-[18px]">
+        <div className="mb-3 flex items-center gap-2">
+          <Mic2 className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+          <span className="ff-mono text-[10.5px] uppercase tracking-[0.06em] text-white/40">Lyrics</span>
+        </div>
+        <div className="mb-2.5 h-[9px] w-[90%] rounded-[5px] bg-white/[0.12]" />
+        <div className="mb-2.5 h-[9px] w-[66%] rounded-[5px]" style={{ background: "rgba(200,149,76,.45)" }} />
+        <div className="h-[9px] w-[80%] rounded-[5px] bg-white/[0.12]" />
+      </div>
+    </div>
+  );
+}
+
+/** Full-window Now Playing takeover: hero tile, big title, transport, queue. */
+function NowPlayingView() {
+  const playback = useAppStore((state) => state.playback);
+  const activeTrack = useAppStore(selectActiveTrack);
+  const togglePlay = useAppStore((state) => state.togglePlay);
+  const next = useAppStore((state) => state.next);
+  const previous = useAppStore((state) => state.previous);
+  const seek = useAppStore((state) => state.seek);
+  const shuffle = useAppStore((state) => state.shuffle);
+  const repeat = useAppStore((state) => state.repeat);
+  const toggleShuffle = useAppStore((state) => state.toggleShuffle);
+  const cycleRepeat = useAppStore((state) => state.cycleRepeat);
+  const setView = useAppStore((state) => state.setView);
+
+  const isPlaying = playback.status === "playing";
+  const hasTrack = Boolean(playback.trackId);
+  const duration = playback.durationSeconds ?? 0;
+
+  const title = activeTrack?.title ?? playback.title ?? "Nothing playing";
+  const artist = activeTrack?.artist ?? (hasTrack ? "Unknown artist" : "Pick a track to start");
+  const sourceLine = activeTrack
+    ? `${sourceLabel(activeTrack)}${activeTrack.album ? ` · ${activeTrack.album}` : ""}`
+    : "Idle";
+
+  const transport =
+    "grid place-items-center rounded-lg text-white/75 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40";
+
+  return (
+    <div className="flex min-h-0 flex-1">
+      <div className="relative flex w-[420px] shrink-0 items-center justify-center p-10">
+        <button
+          className="absolute left-7 top-7 grid h-9 w-9 place-items-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white"
+          onClick={() => setView("library")}
+          title="Back to library"
+          type="button"
+        >
+          <ChevronDown className="h-5 w-5" />
+        </button>
+        <Equalizer
+          tile={340}
+          radius={26}
+          gap={11}
+          padBottom={96}
+          barWidth={11}
+          bars={[70, 40, 100, 58, 84, 46]}
+          color={[ACCENT, ACCENT_SOFT]}
+          animate={isPlaying}
+          surface={{
+            background: "rgba(255,255,255,.05)",
+            border: "1px solid rgba(255,255,255,.12)",
+            boxShadow: "0 36px 80px -36px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.12)"
+          }}
+        />
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-6 py-10 pl-0 pr-11">
+        <div className="flex items-center gap-2.5">
+          <span className="ff-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: "#d8b27a" }}>
+            Now Playing
+          </span>
+          <span className="h-[5px] w-[5px] rounded-full" style={{ background: ACCENT }} />
+          <span className="truncate text-[12.5px] text-white/55">{sourceLine}</span>
+        </div>
+
+        <div className="min-w-0">
+          <h1 className="ff-display text-[46px] font-extrabold leading-[1.02] tracking-[-0.03em] text-white" style={{ overflowWrap: "anywhere" }}>
+            {title}
+          </h1>
+          <div className="mt-2.5 text-[17px] text-white/60">{artist}</div>
+        </div>
+
+        <div className="flex max-w-[560px] items-center gap-3.5">
+          <span className="ff-mono text-[12px] text-white/45">{formatSeconds(playback.positionSeconds)}</span>
+          <div className="flex-1">
+            <Slider value={playback.positionSeconds} max={duration} disabled={!hasTrack || duration === 0} onChange={(value) => seek(value)} />
+          </div>
+          <span className="ff-mono text-[12px] text-white/45">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
+        </div>
+
+        <div className="flex items-center gap-8 text-white">
+          <button
+            className={`${transport} h-10 w-10`}
+            style={shuffle ? { color: ACCENT } : { color: "rgba(255,255,255,.75)" }}
+            onClick={toggleShuffle}
+            title="Shuffle"
+            type="button"
+          >
+            <Shuffle className="h-[22px] w-[22px]" />
+          </button>
+          <button className={`${transport} h-11 w-11`} onClick={previous} disabled={!hasTrack} title="Previous" type="button">
+            <SkipBack className="h-[26px] w-[26px] fill-current" />
+          </button>
+          <button
+            className="accent-glow-lg grid h-[72px] w-[72px] place-items-center rounded-full text-white transition hover:brightness-110 active:scale-95 disabled:opacity-50"
+            style={{ background: ACCENT }}
+            onClick={togglePlay}
+            disabled={!hasTrack}
+            title={isPlaying ? "Pause" : "Play"}
+            type="button"
+          >
+            {isPlaying ? <Pause className="h-7 w-7 fill-current" /> : <Play className="h-7 w-7 translate-x-[2px] fill-current" />}
+          </button>
+          <button className={`${transport} h-11 w-11`} onClick={next} disabled={!hasTrack} title="Next" type="button">
+            <SkipForward className="h-[26px] w-[26px] fill-current" />
+          </button>
+          <button
+            className={`${transport} h-10 w-10`}
+            style={repeat !== "off" ? { color: ACCENT } : { color: "rgba(255,255,255,.75)" }}
+            onClick={cycleRepeat}
+            title={`Repeat: ${repeat}`}
+            type="button"
+          >
+            {repeat === "one" ? <Repeat1 className="h-[22px] w-[22px]" /> : <Repeat className="h-[22px] w-[22px]" />}
+          </button>
+        </div>
+      </div>
+
+      <QueuePanel />
+    </div>
   );
 }
 
@@ -836,35 +1239,36 @@ function DownloadsToast() {
   if (downloads.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-24 right-5 z-40 flex w-80 flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-28 right-6 z-40 flex w-80 flex-col gap-2">
       {downloads.map((job) => {
         const pct = job.totalBytes ? Math.min(100, Math.round((job.progressBytes / job.totalBytes) * 100)) : null;
         const indeterminate = job.status === "processing" || (job.status === "downloading" && pct === null);
         const barWidth = job.status === "complete" ? 100 : pct ?? 0;
         return (
-          <div key={job.id} className="glass-strong amp-rise pointer-events-auto rounded-xl border border-black/[0.07] p-3">
-            <div className="mb-1 flex items-center gap-2">
+          <div key={job.id} className="glass-strong amp-rise pointer-events-auto rounded-2xl p-3.5">
+            <div className="mb-1.5 flex items-center gap-2">
               {job.status === "complete" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
               ) : job.status === "failed" ? (
-                <XCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
               ) : (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-600" />
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" style={{ color: ACCENT }} />
               )}
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">
                 {job.title ?? (job.kind === "external" ? "External download" : "Download")}
               </span>
               {job.status === "downloading" && pct !== null && (
-                <span className="text-xs tabular-nums text-zinc-500">{pct}%</span>
+                <span className="ff-mono text-xs text-white/50">{pct}%</span>
               )}
             </div>
-            <div className="mb-2 truncate text-xs text-zinc-400">{job.error ?? job.stage ?? "Working…"}</div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+            <div className="mb-2 truncate text-xs text-white/45">{job.error ?? job.stage ?? "Working…"}</div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.1]">
               <div
-                className={`h-full rounded-full transition-[width] ${
-                  job.status === "failed" ? "bg-rose-500" : "bg-violet-600"
-                } ${indeterminate ? "w-full animate-pulse" : ""}`}
-                style={indeterminate ? undefined : { width: `${barWidth}%` }}
+                className={`h-full rounded-full transition-[width] ${indeterminate ? "w-full animate-pulse" : ""}`}
+                style={{
+                  background: job.status === "failed" ? "#f43f5e" : ACCENT,
+                  ...(indeterminate ? {} : { width: `${barWidth}%` })
+                }}
               />
             </div>
           </div>
@@ -912,15 +1316,29 @@ export function App() {
   }, []);
 
   return (
-    <div className="amp-bg flex h-screen w-screen flex-col overflow-hidden text-zinc-900">
-      <TitleBar />
-      <div className="flex min-h-0 flex-1">
-        <Sidebar />
-        <div key={view} className="amp-rise flex min-h-0 flex-1 flex-col">
-          {view === "settings" ? <SettingsView /> : <LibraryView onRename={setRenameTarget} />}
-        </div>
+    <div className="amp-bg relative flex h-screen w-screen flex-col overflow-hidden text-white">
+      <div className="amp-glow" style={{ width: 640, height: 640, left: -140, top: -160, background: "#5c4622", opacity: 0.42 }} />
+      <div className="amp-glow" style={{ width: 540, height: 540, right: -100, bottom: -220, background: "#241d12", opacity: 0.55, filter: "blur(170px)" }} />
+
+      <div className="relative z-[1] flex min-h-0 flex-1 flex-col">
+        <TitleBar />
+        {view === "nowplaying" ? (
+          <div key="nowplaying" className="amp-rise flex min-h-0 flex-1">
+            <NowPlayingView />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <Sidebar />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div key={view} className="amp-rise flex min-h-0 flex-1 flex-col">
+                {view === "settings" ? <SettingsView /> : <LibraryView onRename={setRenameTarget} />}
+              </div>
+              <PlayerBar />
+            </div>
+          </div>
+        )}
       </div>
-      <PlayerBar />
+
       <DownloadsToast />
       <ResizeHandles />
       {renameTarget && <RenameDialog track={renameTarget} onClose={() => setRenameTarget(null)} />}

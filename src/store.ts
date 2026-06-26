@@ -3,7 +3,7 @@ import type { AppSettings, DownloadProgress, LibraryRoot, PlaybackState, RepeatM
 import * as api from "./tauri";
 
 type SourceFilter = "all" | TrackSourceType | "missing" | "favorites";
-export type View = "library" | "settings";
+export type View = "library" | "settings" | "nowplaying";
 
 interface AppStore {
   tracks: Track[];
@@ -47,6 +47,7 @@ interface AppStore {
   handleTrackEnded: () => Promise<void>;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
+  clearQueue: () => void;
   seek: (positionSeconds: number) => Promise<void>;
   setVolume: (volume: number) => Promise<void>;
   refreshPlayback: () => Promise<void>;
@@ -399,6 +400,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   toggleShuffle: () => set((state) => ({ shuffle: !state.shuffle })),
+  // Drop everything queued after the current track, keeping what's playing.
+  clearQueue: () =>
+    set((state) => ({
+      queue: state.queueIndex >= 0 ? state.queue.slice(0, state.queueIndex + 1) : []
+    })),
   cycleRepeat: () =>
     set((state) => ({ repeat: state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off" })),
 
