@@ -1,6 +1,41 @@
 import { create } from "zustand";
-import type { AppSettings, DownloadProgress, LibraryRoot, PlaybackState, RepeatMode, Track, TrackSourceType } from "./types";
+import type {
+  AppSettings,
+  DownloadProgress,
+  LibraryRoot,
+  LyricLine,
+  LyricsEntry,
+  PlaybackState,
+  RepeatMode,
+  Track,
+  TrackSourceType
+} from "./types";
 import * as api from "./tauri";
+
+/** Parse synced LRC text ("[mm:ss.xx] line") into time-ordered lines. */
+function parseLrc(lrc: string): LyricLine[] {
+  const timeTag = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+  const lines: LyricLine[] = [];
+
+  for (const raw of lrc.split(/\r?\n/)) {
+    timeTag.lastIndex = 0;
+    const stamps: number[] = [];
+    let match: RegExpExecArray | null;
+    let textStart = 0;
+    while ((match = timeTag.exec(raw)) !== null) {
+      const minutes = Number(match[1]);
+      const seconds = Number(match[2]);
+      const fraction = match[3] ? Number(`0.${match[3]}`) : 0;
+      stamps.push(minutes * 60 + seconds + fraction);
+      textStart = timeTag.lastIndex;
+    }
+    if (stamps.length === 0) continue;
+    const text = raw.slice(textStart).trim();
+    for (const time of stamps) lines.push({ time, text });
+  }
+
+  return lines.sort((a, b) => a.time - b.time);
+}
 
 type SourceFilter = "all" | TrackSourceType | "missing" | "favorites";
 export type View = "library" | "settings" | "nowplaying";
@@ -20,9 +55,11 @@ interface AppStore {
   queueIndex: number;
   shuffle: boolean;
   repeat: RepeatMode;
+  lyrics: Record<string, LyricsEntry>;
   busy: boolean;
   error: string | null;
   loadInitialData: () => Promise<void>;
+  fetchLyrics: (trackId: string, refresh?: boolean) => Promise<void>;
   addFolders: () => Promise<void>;
   rescanRoot: (rootId: string) => Promise<void>;
   relinkRoot: (rootId: string) => Promise<void>;
@@ -97,8 +134,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
   queueIndex: -1,
   shuffle: false,
   repeat: "off",
+  lyrics: {},
   busy: false,
   error: null,
+
+  fetchLyrics: async (trackId, refresh = false) => {
+    set((state) => ({
+      lyrics: {
+        ...state.lyrics,
+        [trackId]: { status: "loading", synced: null, plain: null, source: null, error: null }
+      }
+    }));
+    try {
+      const raw = await api.fetchLyrics(trackId, refresh);
+      const synced = raw.synced ? parseLrc(raw.synced) : null;
+      set((state) => ({
+        lyrics: {
+          ...state.lyrics,
+          [trackId]: {
+            status: "ready",
+            synced: synced && synced.length > 0 ? synced : null,
+            plain: raw.plain,
+            source: raw.source,
+            error: null
+          }
+        }
+      }));
+    } catch (error) {
+      set((state) => ({
+        lyrics: {
+          ...state.lyrics,
+          [trackId]: { status: "error", synced: null, plain: null, source: null, error: messageFrom(error) }
+        }
+      }));
+    }
+  },
 
   loadInitialData: async () => {
     set({ busy: true, error: null });

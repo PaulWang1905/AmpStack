@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppSettings, DownloadProgress, ExternalSourceProbe, LibraryRoot, PlaybackState, ScanSummary, Track, YtDlpStatus } from "./types";
+import type { AppSettings, DownloadProgress, ExternalSourceProbe, LibraryRoot, PlaybackState, RawLyrics, ScanSummary, Track, YtDlpStatus } from "./types";
 
 export async function listTracks(): Promise<Track[]> {
   return invoke("list_tracks");
@@ -65,6 +65,10 @@ export async function addRemoteUrl(url: string): Promise<Track> {
 
 export async function checkYtDlp(): Promise<YtDlpStatus> {
   return invoke("check_ytdlp");
+}
+
+export async function fetchLyrics(trackId: string, refresh = false): Promise<RawLyrics> {
+  return invoke("fetch_lyrics", { trackId, refresh });
 }
 
 export async function probeExternalSource(url: string): Promise<ExternalSourceProbe> {

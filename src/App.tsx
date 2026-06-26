@@ -1034,13 +1034,182 @@ function PlayerBar() {
   );
 }
 
-/** The Up Next + Lyrics rail on the right of the Now Playing view. */
-function QueuePanel() {
+/** A pill-style tab button for the Now Playing side panel. */
+function PanelTab({
+  icon: Icon,
+  label,
+  count,
+  active,
+  onClick
+}: {
+  icon: typeof Mic2;
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[12.5px] font-semibold transition ${
+        active ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/75"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+      {count ? <span className="ff-mono text-[11px] text-white/40">{count}</span> : null}
+    </button>
+  );
+}
+
+/** Lyrics for the active track: one-button search against LRCLIB, with synced
+ *  line highlighting that follows playback when timestamped lyrics are found.
+ *  Fills its container so it can occupy the full side-panel height. */
+function LyricsPanel() {
+  const playback = useAppStore((state) => state.playback);
+  const lyrics = useAppStore((state) => state.lyrics);
+  const fetchLyrics = useAppStore((state) => state.fetchLyrics);
+
+  const trackId = playback.trackId;
+  const entry = trackId ? lyrics[trackId] : undefined;
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLParagraphElement>(null);
+
+  const activeIndex = useMemo(() => {
+    if (!entry?.synced) return -1;
+    const at = playback.positionSeconds + 0.25;
+    let index = -1;
+    for (let i = 0; i < entry.synced.length; i++) {
+      if (entry.synced[i].time <= at) index = i;
+      else break;
+    }
+    return index;
+  }, [entry?.synced, playback.positionSeconds]);
+
+  useEffect(() => {
+    const box = scrollRef.current;
+    const line = activeRef.current;
+    if (box && line) {
+      box.scrollTo({ top: line.offsetTop - box.clientHeight / 2 + line.clientHeight / 2, behavior: "smooth" });
+    }
+  }, [activeIndex]);
+
+  const centered = "grid min-h-0 flex-1 place-items-center px-6 text-center";
+
+  let body: ReactNode;
+  if (!trackId) {
+    body = (
+      <div className={centered}>
+        <p className="text-[13px] text-white/40">Play a track to find its lyrics.</p>
+      </div>
+    );
+  } else if (!entry) {
+    body = (
+      <div className={centered}>
+        <div className="flex flex-col items-center gap-4">
+          <Mic2 className="h-9 w-9 text-white/15" />
+          <p className="max-w-[260px] text-[13px] text-white/45">Search LRCLIB for synced lyrics to this track.</p>
+          <button
+            className="accent-glow flex h-10 items-center justify-center gap-2 rounded-xl px-6 text-[13px] font-bold text-white transition hover:brightness-110"
+            style={{ background: ACCENT }}
+            onClick={() => fetchLyrics(trackId)}
+            type="button"
+          >
+            <Search className="h-4 w-4" /> Find lyrics
+          </button>
+        </div>
+      </div>
+    );
+  } else if (entry.status === "loading") {
+    body = (
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-1 py-1">
+        <div className="flex items-center gap-2 text-[12.5px] text-white/55">
+          <Loader2 className="h-4 w-4 animate-spin" style={{ color: ACCENT }} /> Searching LRCLIB…
+        </div>
+        <div className="flex flex-col gap-3">
+          {[82, 96, 64, 90, 73, 88, 60, 84, 70, 92].map((width, index) => (
+            <div
+              key={index}
+              className="h-3.5 animate-pulse rounded-full bg-white/[0.08]"
+              style={{ width: `${width}%`, animationDelay: `${index * 90}ms` }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  } else if (entry.status === "error") {
+    body = (
+      <div className={centered}>
+        <p className="text-[13px] text-white/50">{entry.error ?? "No lyrics found."}</p>
+      </div>
+    );
+  } else if (entry.synced) {
+    body = (
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto px-1">
+        <div className="mx-auto flex max-w-[680px] flex-col gap-3 py-2">
+          {entry.synced.map((line, index) => (
+            <p
+              key={index}
+              ref={index === activeIndex ? activeRef : undefined}
+              className="text-[17px] leading-snug transition-all duration-300"
+              style={{
+                color: index === activeIndex ? "#fff" : "rgba(255,255,255,.38)",
+                fontWeight: index === activeIndex ? 700 : 500
+              }}
+            >
+              {line.text || "♪"}
+            </p>
+          ))}
+        </div>
+      </div>
+    );
+  } else if (entry.plain) {
+    body = (
+      <div className="min-h-0 flex-1 overflow-auto px-1">
+        <p className="mx-auto max-w-[680px] whitespace-pre-wrap py-2 text-[15px] leading-relaxed text-white/75">
+          {entry.plain}
+        </p>
+      </div>
+    );
+  } else {
+    body = (
+      <div className={centered}>
+        <p className="text-[13px] text-white/50">No lyrics text available.</p>
+      </div>
+    );
+  }
+
+  const showSource = entry?.status === "ready" && (entry.synced || entry.plain) && entry.source;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {body}
+      {showSource && (
+        <div className="ff-mono mt-3 shrink-0 text-[10px] uppercase tracking-[0.06em] text-white/30">
+          Source · {entry?.source}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Right side of Now Playing: a full-height panel that tabs between Lyrics and
+ *  the Up Next queue, so lyrics get real room instead of a cramped corner card. */
+function NowPlayingPanel() {
   const queue = useAppStore((state) => state.queue);
   const queueIndex = useAppStore((state) => state.queueIndex);
   const tracks = useAppStore((state) => state.tracks);
   const clearQueue = useAppStore((state) => state.clearQueue);
   const playTrack = useAppStore((state) => state.playTrack);
+  const lyrics = useAppStore((state) => state.lyrics);
+  const fetchLyrics = useAppStore((state) => state.fetchLyrics);
+  const trackId = useAppStore((state) => state.playback.trackId);
+
+  // Default to the queue; lyrics stay hidden until the user opens the tab and
+  // explicitly searches (results are then cached, so it won't re-download).
+  const [tab, setTab] = useState<"lyrics" | "queue">("queue");
 
   const upNext = useMemo(
     () =>
@@ -1051,68 +1220,86 @@ function QueuePanel() {
     [queue, queueIndex, tracks]
   );
 
+  const lyricsEntry = trackId ? lyrics[trackId] : undefined;
+
   return (
     <div
-      className="flex w-[340px] shrink-0 flex-col px-6 py-7"
+      className="flex min-w-0 flex-1 flex-col px-7 py-7"
       style={{ borderLeft: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.04)" }}
     >
-      <div className="mb-4 flex items-center justify-between">
-        <span className="ff-display text-[17px] font-bold text-white">Up Next</span>
-        {upNext.length > 0 && (
+      <div className="mb-5 flex items-center gap-3">
+        <div className="flex flex-1 gap-1 rounded-xl bg-white/[0.04] p-1">
+          <PanelTab icon={Mic2} label="Lyrics" active={tab === "lyrics"} onClick={() => setTab("lyrics")} />
+          <PanelTab
+            icon={ListMusic}
+            label="Up Next"
+            count={upNext.length}
+            active={tab === "queue"}
+            onClick={() => setTab("queue")}
+          />
+        </div>
+        {tab === "lyrics" ? (
           <button
-            className="ff-mono text-[11px] text-white/40 transition hover:text-white"
-            onClick={clearQueue}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
+            onClick={() => trackId && fetchLyrics(trackId, true)}
+            disabled={!trackId || lyricsEntry?.status === "loading"}
+            title="Search again"
             type="button"
           >
-            CLEAR
+            <RefreshCcw className={`h-4 w-4 ${lyricsEntry?.status === "loading" ? "animate-spin" : ""}`} />
           </button>
-        )}
-      </div>
-
-      <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-auto px-1">
-        {upNext.length === 0 ? (
-          <p className="px-1 text-[13px] text-white/40">Nothing queued. Play a track to build a queue.</p>
         ) : (
-          upNext.map((track, index) => (
+          upNext.length > 0 && (
             <button
-              key={`${track.id}-${index}`}
-              className="flex items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-white/[0.06]"
-              onClick={() => playTrack(track.id)}
+              className="ff-mono shrink-0 text-[11px] text-white/40 transition hover:text-white"
+              onClick={clearQueue}
               type="button"
             >
-              <Equalizer
-                tile={40}
-                radius={10}
-                gap={2.5}
-                padBottom={11}
-                barWidth={3}
-                bars={[9, 15, 11]}
-                color="rgba(255,255,255,.38)"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13.5px] font-semibold text-white">{track.title}</div>
-                <div className="truncate text-[11.5px] text-white/50">{track.artist ?? "Unknown artist"}</div>
-              </div>
-              <span className="ff-mono text-[11px] text-white/40">{formatSeconds(track.durationSeconds)}</span>
+              CLEAR
             </button>
-          ))
+          )
         )}
       </div>
 
-      <div className="card mt-4 rounded-2xl p-[18px]">
-        <div className="mb-3 flex items-center gap-2">
-          <Mic2 className="h-3.5 w-3.5" style={{ color: ACCENT }} />
-          <span className="ff-mono text-[10.5px] uppercase tracking-[0.06em] text-white/40">Lyrics</span>
+      {tab === "lyrics" ? (
+        <LyricsPanel />
+      ) : (
+        <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-auto px-1">
+          {upNext.length === 0 ? (
+            <p className="px-1 text-[13px] text-white/40">Nothing queued. Play a track to build a queue.</p>
+          ) : (
+            upNext.map((track, index) => (
+              <button
+                key={`${track.id}-${index}`}
+                className="flex items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-white/[0.06]"
+                onClick={() => playTrack(track.id)}
+                type="button"
+              >
+                <Equalizer
+                  tile={40}
+                  radius={10}
+                  gap={2.5}
+                  padBottom={11}
+                  barWidth={3}
+                  bars={[9, 15, 11]}
+                  color="rgba(255,255,255,.38)"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13.5px] font-semibold text-white">{track.title}</div>
+                  <div className="truncate text-[11.5px] text-white/50">{track.artist ?? "Unknown artist"}</div>
+                </div>
+                <span className="ff-mono text-[11px] text-white/40">{formatSeconds(track.durationSeconds)}</span>
+              </button>
+            ))
+          )}
         </div>
-        <div className="mb-2.5 h-[9px] w-[90%] rounded-[5px] bg-white/[0.12]" />
-        <div className="mb-2.5 h-[9px] w-[66%] rounded-[5px]" style={{ background: "rgba(200,149,76,.45)" }} />
-        <div className="h-[9px] w-[80%] rounded-[5px] bg-white/[0.12]" />
-      </div>
+      )}
     </div>
   );
 }
 
-/** Full-window Now Playing takeover: hero tile, big title, transport, queue. */
+/** Full-window Now Playing takeover: a compact player card on the left and a
+ *  full-height Lyrics / Up Next panel on the right. */
 function NowPlayingView() {
   const playback = useAppStore((state) => state.playback);
   const activeTrack = useAppStore(selectActiveTrack);
@@ -1141,57 +1328,59 @@ function NowPlayingView() {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="relative flex w-[420px] shrink-0 items-center justify-center p-10">
+      <div className="relative flex w-[480px] shrink-0 flex-col px-10 py-9">
         <button
-          className="absolute left-7 top-7 grid h-9 w-9 place-items-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white"
+          className="absolute left-7 top-7 z-10 grid h-9 w-9 place-items-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white"
           onClick={() => setView("library")}
           title="Back to library"
           type="button"
         >
           <ChevronDown className="h-5 w-5" />
         </button>
-        <Equalizer
-          tile={340}
-          radius={26}
-          gap={11}
-          padBottom={96}
-          barWidth={11}
-          bars={[70, 40, 100, 58, 84, 46]}
-          color={[ACCENT, ACCENT_SOFT]}
-          animate={isPlaying}
-          surface={{
-            background: "rgba(255,255,255,.05)",
-            border: "1px solid rgba(255,255,255,.12)",
-            boxShadow: "0 36px 80px -36px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.12)"
-          }}
-        />
-      </div>
 
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-6 py-10 pl-0 pr-11">
-        <div className="flex items-center gap-2.5">
-          <span className="ff-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: "#d8b27a" }}>
-            Now Playing
-          </span>
-          <span className="h-[5px] w-[5px] rounded-full" style={{ background: ACCENT }} />
-          <span className="truncate text-[12.5px] text-white/55">{sourceLine}</span>
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8">
+          <Equalizer
+            tile={228}
+            radius={20}
+            gap={7}
+            padBottom={64}
+            barWidth={7}
+            bars={[70, 40, 100, 58, 84, 46]}
+            color={[ACCENT, ACCENT_SOFT]}
+            animate={isPlaying}
+            surface={{
+              background: "rgba(255,255,255,.05)",
+              border: "1px solid rgba(255,255,255,.12)",
+              boxShadow: "0 36px 80px -36px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.12)"
+            }}
+          />
 
-        <div className="min-w-0">
-          <h1 className="ff-display text-[46px] font-extrabold leading-[1.02] tracking-[-0.03em] text-white" style={{ overflowWrap: "anywhere" }}>
-            {title}
-          </h1>
-          <div className="mt-2.5 text-[17px] text-white/60">{artist}</div>
-        </div>
-
-        <div className="flex max-w-[560px] items-center gap-3.5">
-          <span className="ff-mono text-[12px] text-white/45">{formatSeconds(playback.positionSeconds)}</span>
-          <div className="flex-1">
-            <Slider value={playback.positionSeconds} max={duration} disabled={!hasTrack || duration === 0} onChange={(value) => seek(value)} />
+          <div className="w-full min-w-0 text-center">
+            <div className="mb-3 flex items-center justify-center gap-2.5">
+              <span className="ff-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: "#d8b27a" }}>
+                Now Playing
+              </span>
+              <span className="h-[5px] w-[5px] rounded-full" style={{ background: ACCENT }} />
+              <span className="max-w-[220px] truncate text-[12.5px] text-white/55">{sourceLine}</span>
+            </div>
+            <h1
+              className="ff-display text-[32px] font-extrabold leading-[1.08] tracking-[-0.02em] text-white"
+              style={{ overflowWrap: "anywhere" }}
+            >
+              {title}
+            </h1>
+            <div className="mt-2 text-[16px] text-white/60">{artist}</div>
           </div>
-          <span className="ff-mono text-[12px] text-white/45">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
-        </div>
 
-        <div className="flex items-center gap-8 text-white">
+          <div className="flex w-full items-center gap-3.5">
+            <span className="ff-mono text-[12px] text-white/45">{formatSeconds(playback.positionSeconds)}</span>
+            <div className="flex-1">
+              <Slider value={playback.positionSeconds} max={duration} disabled={!hasTrack || duration === 0} onChange={(value) => seek(value)} />
+            </div>
+            <span className="ff-mono text-[12px] text-white/45">{playback.durationSeconds ? formatSeconds(duration) : "--:--"}</span>
+          </div>
+
+          <div className="flex items-center gap-7 text-white">
           <button
             className={`${transport} h-10 w-10`}
             style={shuffle ? { color: ACCENT } : { color: "rgba(255,255,255,.75)" }}
@@ -1226,10 +1415,11 @@ function NowPlayingView() {
           >
             {repeat === "one" ? <Repeat1 className="h-[22px] w-[22px]" /> : <Repeat className="h-[22px] w-[22px]" />}
           </button>
+          </div>
         </div>
       </div>
 
-      <QueuePanel />
+      <NowPlayingPanel />
     </div>
   );
 }

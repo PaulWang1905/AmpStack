@@ -622,6 +622,159 @@ fn check_ytdlp() -> YtDlpStatus {
     ytdlp::check_ytdlp()
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LyricsResult {
+    /// Timestamped LRC text, when the source has it (enables line highlighting).
+    synced: Option<String>,
+    /// Plain, untimed lyrics.
+    plain: Option<String>,
+    source: String,
+    track_name: Option<String>,
+    artist_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LrclibItem {
+    track_name: Option<String>,
+    artist_name: Option<String>,
+    duration: Option<f64>,
+    #[serde(default)]
+    instrumental: bool,
+    plain_lyrics: Option<String>,
+    synced_lyrics: Option<String>,
+}
+
+const LYRICS_UA: &str = concat!("AmpStack/", env!("CARGO_PKG_VERSION"), " (desktop music player)");
+
+fn lrclib_search(http: &reqwest::blocking::Client, params: &[(&str, &str)]) -> Vec<LrclibItem> {
+    let response = match http
+        .get("https://lrclib.net/api/search")
+        .header(reqwest::header::USER_AGENT, LYRICS_UA)
+        .query(params)
+        .send()
+    {
+        Ok(response) if response.status().is_success() => response,
+        _ => return Vec::new(),
+    };
+    match response.text() {
+        Ok(body) => serde_json::from_str::<Vec<LrclibItem>>(&body).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Strip "(Official Video)", "[4K]" and similar decorations so a noisy library
+/// title still matches a lyrics-database entry.
+fn strip_decorations(title: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0i32;
+    for ch in title.chars() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = (depth - 1).max(0),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Prefer a real (non-instrumental) match that carries synced lyrics, breaking
+/// ties by whichever candidate's duration is closest to the track we're playing.
+fn pick_best_lyrics(mut items: Vec<LrclibItem>, duration: Option<i64>) -> Option<LrclibItem> {
+    items.retain(|item| !item.instrumental && (item.synced_lyrics.is_some() || item.plain_lyrics.is_some()));
+    items.sort_by_key(|item| {
+        let synced_rank = if item.synced_lyrics.is_some() { 0 } else { 1 };
+        let dur_diff = match (duration, item.duration) {
+            (Some(ours), Some(theirs)) => (ours - theirs.round() as i64).abs(),
+            _ => 600,
+        };
+        (synced_rank, dur_diff)
+    });
+    items.into_iter().next()
+}
+
+#[tauri::command]
+async fn fetch_lyrics(
+    track_id: String,
+    refresh: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<LyricsResult> {
+    // Quick DB work on the calling task (the lock is held only briefly). Serve a
+    // previously cached lookup unless the caller explicitly asked to re-search.
+    let track = {
+        let db = state.db.lock().map_err(|_| "Database lock poisoned".to_string())?;
+        if !refresh.unwrap_or(false) {
+            if let Some((synced, plain, source)) =
+                db.get_cached_lyrics(&track_id).map_err(|error| error.to_string())?
+            {
+                return Ok(LyricsResult {
+                    synced,
+                    plain,
+                    source: source.unwrap_or_else(|| "LRCLIB".to_string()),
+                    track_name: None,
+                    artist_name: None,
+                });
+            }
+        }
+        db.get_track(&track_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Track not found".to_string())?
+    };
+    let http = state.http.clone();
+
+    // The LRCLIB lookup uses a blocking HTTP client. Run it on a worker thread so
+    // the WebKit UI thread keeps painting (the "Searching…" state) while we wait,
+    // instead of freezing until the network round-trip returns.
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let title = track.title.trim().to_string();
+        if title.is_empty() {
+            return Err("This track has no title to search lyrics by".to_string());
+        }
+        let artist_owned = track.artist.clone().unwrap_or_default();
+        let artist = artist_owned.trim();
+        let duration = track.duration_seconds.map(|value| value.round() as i64);
+
+        // First try the exact title (+ artist); fall back to a de-decorated query.
+        let mut params: Vec<(&str, &str)> = vec![("track_name", title.as_str())];
+        if !artist.is_empty() {
+            params.push(("artist_name", artist));
+        }
+        let mut items = lrclib_search(&http, &params);
+
+        if items.is_empty() {
+            let cleaned = strip_decorations(&title);
+            let query = if artist.is_empty() { cleaned } else { format!("{cleaned} {artist}") };
+            if !query.trim().is_empty() {
+                items = lrclib_search(&http, &[("q", query.as_str())]);
+            }
+        }
+
+        match pick_best_lyrics(items, duration) {
+            Some(item) => Ok(LyricsResult {
+                synced: item.synced_lyrics,
+                plain: item.plain_lyrics,
+                source: "LRCLIB".to_string(),
+                track_name: item.track_name,
+                artist_name: item.artist_name,
+            }),
+            None => Err("No lyrics found for this track".to_string()),
+        }
+    })
+    .await
+    .map_err(|_| "Lyrics lookup was cancelled".to_string())?;
+
+    // Persist a successful lookup so the next play serves from cache.
+    if let Ok(found) = &result {
+        if let Ok(mut db) = state.db.lock() {
+            let _ = db.cache_lyrics(&track_id, found.synced.as_deref(), found.plain.as_deref(), &found.source);
+        }
+    }
+
+    result
+}
+
 #[tauri::command]
 fn probe_external_source(url: String) -> CommandResult<ExternalSourceProbe> {
     ytdlp::probe_external_source(&url)
@@ -1017,6 +1170,7 @@ fn main() {
             import_local_files,
             add_remote_url,
             check_ytdlp,
+            fetch_lyrics,
             probe_external_source,
             download_external_source,
             download_track,

@@ -81,6 +81,30 @@ export interface YtDlpStatus {
   error: string | null;
 }
 
+/** Raw lyrics payload from the backend (LRCLIB lookup). */
+export interface RawLyrics {
+  synced: string | null;
+  plain: string | null;
+  source: string;
+  trackName: string | null;
+  artistName: string | null;
+}
+
+/** One timestamped line parsed from synced LRC lyrics. */
+export interface LyricLine {
+  time: number;
+  text: string;
+}
+
+/** Per-track lyrics state held in the store. */
+export interface LyricsEntry {
+  status: "loading" | "ready" | "error";
+  synced: LyricLine[] | null;
+  plain: string | null;
+  source: string | null;
+  error: string | null;
+}
+
 export interface ExternalSourceProbe {
   url: string;
   webpageUrl: string | null;

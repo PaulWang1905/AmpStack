@@ -99,6 +99,15 @@ impl LibraryDb {
                 FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS lyrics_cache (
+                track_id TEXT PRIMARY KEY,
+                synced TEXT,
+                plain TEXT,
+                source TEXT,
+                fetched_at TEXT NOT NULL,
+                FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tracks_source_type ON tracks(source_type);
             CREATE INDEX IF NOT EXISTS idx_tracks_library_root_id ON tracks(library_root_id);
             "#,
@@ -138,6 +147,39 @@ impl LibraryDb {
         self.connection.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Cached lyrics for a track, if previously fetched: (synced LRC, plain text, source).
+    pub fn get_cached_lyrics(
+        &self,
+        track_id: &str,
+    ) -> Result<Option<(Option<String>, Option<String>, Option<String>)>> {
+        self.connection
+            .query_row(
+                "SELECT synced, plain, source FROM lyrics_cache WHERE track_id = ?1",
+                params![track_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+    }
+
+    /// Persist a successful lyrics lookup so we don't hit the network again.
+    pub fn cache_lyrics(
+        &mut self,
+        track_id: &str,
+        synced: Option<&str>,
+        plain: Option<&str>,
+        source: &str,
+    ) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO lyrics_cache (track_id, synced, plain, source, fetched_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(track_id) DO UPDATE SET \
+                synced = excluded.synced, plain = excluded.plain, \
+                source = excluded.source, fetched_at = excluded.fetched_at",
+            params![track_id, synced, plain, source, now()],
         )?;
         Ok(())
     }
