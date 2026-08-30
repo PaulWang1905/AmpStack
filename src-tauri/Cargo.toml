@@ -1,6 +1,6 @@
 [package]
 name = "ampstack"
-version = "0.1.0"
+version = "0.1.5"
 description = "Desktop music player with local library scanning and Rust-native playback"
 authors = ["AmpStack"]
 license = ""

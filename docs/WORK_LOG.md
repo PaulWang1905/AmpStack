@@ -1,150 +1,137 @@
 # AmpStack Work Log
 
+Last updated 2026-08-30. Version `0.1.5`, latest tag `v0.1.5`.
+
 ## Current Build Status
 
-AmpStack is not finished as a fully verified working app yet.
+AmpStack is well past the MVP scaffold this log used to describe. The app builds
+and runs locally on Linux, and a cross-platform release workflow builds Windows,
+macOS (Apple Silicon and Intel) and Linux bundles from a pushed `v*` tag.
 
-The project has a first desktop MVP scaffold. The user has started local Tauri build runs and resolved several Linux native dependency issues, but the latest code still needs another compile/test pass. This assistant environment still does not have `cargo` or `rustc` on PATH, so Rust/Tauri compilation cannot be run from here.
+What has *not* happened: there are no automated tests, and no CI job type-checks
+or compiles outside of a tagged release. Everything below has been exercised by
+hand rather than by a test suite.
 
-## Completed So Far
+## Implemented
 
-### Planning And Documentation
+### Library
 
-- Created `STACK_DESIGN.md` with the desktop app stack and architecture rationale.
-- Created `IMPLEMENTATION_PLAN.md` with the MVP build phases.
-- Added local MP3 playback and music library scanning to the intended product plan.
-- Created `README.md` with project intro, requirements, run/build instructions, app workflow, and caveats.
+- Add one or more music folders as library roots.
+- Recursive scanning with `walkdir`, accepting `mp3`, `m4a`, `aac`, `flac`,
+  `ogg`, `wav` (`supported_audio_path` in `src-tauri/src/main.rs`).
+- Manual rescan per root, returning a `ScanSummary`
+  (scanned / added / updated / missing / unsupported).
+- Relink a root to a new location on this machine, then rescan.
+- Remove a root; delete a single track.
+- Import individual files from outside any root.
+- Missing files are marked on rescan and on failed load, and shown as offline.
+- Search, source-type filter, favorites, and per-track rename (title + artist).
 
-### Project Scaffold
+### Playback
 
-- Added a Vite + React + TypeScript frontend scaffold.
-- Added a Tauri v2 desktop app scaffold.
-- Added package scripts for frontend and Tauri workflows:
-  - `npm run dev`
-  - `npm run build`
-  - `npm run tauri`
-  - `npm run tauri:dev`
-  - `npm run tauri:build`
+- `rodio` with Symphonia decoding, wrapped in `src-tauri/src/player.rs`.
+- Load, play, pause, stop, seek, volume, and a polled/emitted playback state.
+- Queue with shuffle and repeat (`off` / `all` / `one`), track-ended handling,
+  next/previous — all in `src/store.ts`.
 
-### Frontend
+### Remote And Downloads
 
-- Built the first app UI in `src/App.tsx`.
-- Added Zustand state management in `src/store.ts`.
-- Added frontend Tauri command wrappers in `src/tauri.ts`.
-- Added shared frontend types in `src/types.ts`.
-- Converted styling to Tailwind CSS using the official Vite plugin.
-- Kept `src/styles.css` as a small Tailwind import and global base-style file.
-- Used `lucide-react` icons for controls and actions.
+- Add a direct audio URL as a track; reject non-audio content types before
+  decoding.
+- Download a remote track to app-managed storage with progress events.
+- Optional `yt-dlp` integration for permitted external sources
+  (`check_ytdlp`, `probe_external_source`, `download_external_source`),
+  with `--no-playlist`, `--ignore-config`, app-managed output paths, a 500 MB
+  cap, and a rights-confirmation checkbox in the UI.
+- `yt-dlp` is never bundled: it is looked up on `PATH` or at
+  `AMPSTACK_YTDLP_PATH`.
+- SSRF guard in `src-tauri/src/security.rs` blocks localhost and private ranges.
 
-### Rust / Tauri Backend
+### Lyrics
 
-- Added Tauri command handlers in `src-tauri/src/main.rs`.
-- Added SQLite schema and query logic in `src-tauri/src/db.rs`.
-- Added recursive music folder scanning in `src-tauri/src/scanner.rs`.
-- Added path and remote URL validation in `src-tauri/src/security.rs`.
-- Added a `rodio` playback wrapper in `src-tauri/src/player.rs`.
-- Added serializable backend models in `src-tauri/src/models.rs`.
-- Added Tauri capabilities in `src-tauri/capabilities/default.json`.
+- `fetch_lyrics` queries LRCLIB (`https://lrclib.net/api/search`) and caches
+  results in a `lyrics_cache` table.
+- Synced LRC lines are parsed into timestamped `LyricLine`s and rendered in a
+  scrolling lyrics panel; plain lyrics are the fallback.
 
-### MVP Features Scaffolded
+### Cross-Device Sync
 
-- Add one or more music folders.
-- Recursively scan music folders.
-- Store discovered tracks in SQLite.
-- Import individual local files.
-- List and search tracks.
-- Filter tracks by source type.
-- Load/play/pause/stop/seek/set volume through Rust commands.
-- Add direct remote audio URLs.
-- Download remote tracks to app-managed storage.
-- Display download progress events.
-- Download permitted external sources through optional user-installed `yt-dlp`.
-- Remove one track from AmpStack.
-- Mark missing files after rescan or failed load.
-- Reject non-audio direct URLs with a clearer content-type error before decoding.
+The design that lets one synced library database work on several machines:
 
-### Scoped yt-dlp Integration
+- Library tracks store a portable, `/`-separated `relative_path` alongside the
+  absolute path (`portable_relative` in `src-tauri/src/scanner.rs`).
+- Each device keeps its own library-root-id → absolute-path map in a small
+  bootstrap file stored *outside* the data dir, so syncing the database never
+  overwrites another device's paths (`AppState::root_paths`).
+- `resolve_track_path` resolves library files as
+  `<this device's root path>/<relative path>` and downloaded files as
+  `<this device's downloads dir>/<file name>`, falling back to the stored
+  absolute path for older rows.
+- `relink_library_folder` is how a second device points a synced root at its
+  own copy of the folder.
 
-- Added `src-tauri/src/ytdlp.rs` for optional external-source downloads.
-- Added backend commands:
-  - `check_ytdlp`
-  - `probe_external_source`
-  - `download_external_source`
-- Kept `yt-dlp` external to the app; AmpStack looks on `PATH` or `AMPSTACK_YTDLP_PATH`.
-- Added single-item mode with `--no-playlist`.
-- Added ignored user config with `--ignore-config`.
-- Added app-managed download/cache paths and a 500 MB size limit.
-- Added a rights/permission checkbox before external-source download.
-- Stored successful external downloads as existing `downloaded_file` tracks.
+### Settings
 
-### Data Cleanup
+- Configurable downloads directory and data directory, each with its default
+  shown.
+- Moving the data dir migrates existing content and reports progress.
+- `restart_app` for changes that need a restart.
 
-- Added a backend `delete_track` command.
-- Added a SQLite cleanup helper for deleting one track and its related playlist/download records.
-- Added UI trash actions for individual tracks.
-- Kept original local/library music files untouched when removing tracks.
-- Deleted app-managed downloaded files when their downloaded track is removed.
-- Cleared loaded playback state when the current track is removed.
-- Removed the all-data cleanup feature at user request because it felt too risky.
+### UI
 
-### Tailwind Conversion
+The dark "Nocturne" look: warm glass surfaces over a dark ground with a single
+gold accent (`#c8954c`), built with Tailwind utility classes in
+`src/App.tsx` (~1.5k lines).
 
-- Added `tailwindcss`.
-- Added `@tailwindcss/vite`.
-- Updated `vite.config.ts` to use the Tailwind Vite plugin.
-- Refactored the UI away from custom component CSS classes and into Tailwind utility classes.
-- Updated documentation to reflect Tailwind as the styling stack.
+- Custom decorationless title bar with its own resize handles
+  (`decorations: false` in `tauri.conf.json`).
+- Sidebar navigation across three views: library, settings, now playing.
+- Full-screen Now Playing view with an equalizer visualisation and a tabbed
+  side panel (lyrics / track info).
+- Player bar, download toasts, rename dialog.
 
-## Important Constraints Followed
+### Release CI
 
-- The assistant did not run `npm install`.
-- The assistant did not run build commands.
-- The assistant did not start a dev server.
-- The assistant did not launch the Tauri app.
-- The assistant did not run Rust compilation.
+- `.github/workflows/release.yml` builds on `v*` tag push or manual dispatch.
+- Matrix: `windows-latest`, `macos-latest` (aarch64 + x86_64), `ubuntu-22.04`.
+- Linux native deps installed in-job; Rust registry and `src-tauri/target/`
+  cached per OS.
+- `.github/scripts/set-version.mjs` writes the pushed tag's version into
+  `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock` before the
+  build, so bundle filenames always match the release.
+- `tauri-action` publishes the release directly (not as a draft).
 
-## Recent Local Build Findings
+## Schema
 
-- Linux native packages were missing during Tauri compilation, including DBus, GTK/GDK, ALSA, and WebKitGTK development headers.
-- Tauri required an RGBA `src-tauri/icons/icon.png`.
-- A local direct-link playback attempt hit a decoder error because the URL content was not a clean direct audio stream.
+Seven SQLite tables in `src-tauri/src/db.rs`: `settings`, `library_roots`,
+`tracks`, `playlists`, `playlist_tracks`, `downloads`, `lyrics_cache`, plus
+indexes on `tracks(source_type)` and `tracks(library_root_id)`.
+
+Migrations are additive `ALTER TABLE ... ADD COLUMN` attempts whose errors are
+ignored (`favorite`, `relative_path`). There is no schema version counter, so
+anything beyond adding a nullable column will need a real migration story.
 
 ## Known Gaps
 
-- The latest code has not been type-checked after the data-cleanup and scoped yt-dlp patches.
-- The latest Rust backend has not been compiled after the data-cleanup and scoped yt-dlp patches.
-- The latest Tauri config has not been validated after the data-cleanup and scoped yt-dlp patches.
-- The playback engine has not been tested with real MP3 files.
-- Folder scanning has not been tested against a real music library.
-- Download behavior has not been tested against a real direct audio URL.
-- Optional `yt-dlp` behavior has not been tested against a real permitted external source.
-- Packaging has not been tested.
-- There may still be compile-time issues that only `npm run build` or `npm run tauri:dev` will reveal.
+- No automated tests of any kind; no CI type-check or `cargo check` outside a
+  tagged release build.
+- `playlists` / `playlist_tracks` tables exist but no playlist UI is wired up.
+- macOS and Windows bundles are unsigned and un-notarized, so users get an
+  OS security warning on first launch.
+- No updater plugin, so installs do not self-update.
+- `csp: null` in `tauri.conf.json` — the webview runs without a content
+  security policy.
+- No folder watching; library changes need a manual rescan.
+- No schema version counter (see above).
+- Reading Apple Music / iTunes / Rhythmbox / Spotify libraries remains out of
+  scope.
 
-## Next Recommended Steps
+## Possible Next Steps
 
-1. Install system requirements:
-   - Node.js 20+
-   - npm
-   - Rust 1.77+
-   - Tauri OS dependencies
-2. Run `npm install`.
-3. Run `npm run build` to type-check and build the frontend.
-4. Run `npm run tauri:dev` to compile and launch the desktop app.
-5. Fix any TypeScript, Rust, or Tauri config errors revealed by compilation.
-6. Test local MP3 import and playback.
-7. Test music folder scanning and manual rescan.
-8. Test direct URL add/download behavior.
-9. Install `yt-dlp` or set `AMPSTACK_YTDLP_PATH`, then test a permitted external source.
-10. Package a Linux build with `npm run tauri:build`.
-
-## Do Not Assume Finished Until
-
-- The app launches through Tauri.
-- A local MP3 can be imported and played.
-- A selected music folder can be scanned.
-- Discovered tracks persist after restart.
-- Missing files are handled cleanly.
-- A direct audio URL can be added and downloaded.
-- A permitted external source can be downloaded through `yt-dlp`.
-- The packaged Linux build launches.
+1. Add a cheap CI job that runs `npm ci && npm run build` (type-check) and
+   `cargo check` on push, so breakage surfaces before a release tag.
+2. Build the playlist UI on the tables that already exist, or drop the tables.
+3. Decide on code signing for macOS/Windows if the builds are going to be
+   shared with anyone else.
+4. Set a real CSP.
+5. Add a schema version counter before the next non-additive schema change.

@@ -6,22 +6,21 @@ The app is built with a React/TypeScript interface inside a Tauri desktop shell.
 
 ## Current Status
 
-This repository contains the first MVP scaffold:
+Version `0.1.5`. The app builds and runs, and tagged releases produce Windows, macOS (Apple Silicon and Intel) and Linux bundles.
 
-- React/Vite frontend
-- Tailwind CSS styling
-- Tauri v2 desktop shell
-- Rust command layer
-- SQLite library schema
-- recursive music folder scanning
+What works today:
+
+- recursive music folder scanning, manual rescan, and per-device relinking
 - local audio file import
-- direct URL track records
-- download command scaffold
-- optional scoped `yt-dlp` external-source downloads
-- single-track removal
-- Rust-native playback through `rodio`
+- search, source filters, favorites, and track renaming
+- queue with shuffle and repeat, played through Rust-native `rodio`
+- direct audio URLs, with offline download to app-managed storage
+- optional scoped `yt-dlp` downloads for sources you have rights to
+- synced lyrics from LRCLIB, cached locally
+- configurable downloads and data directories, with data-dir migration
+- a dark "Nocturne" interface with a custom title bar and a full-screen Now Playing view
 
-The project has had local build attempts, but the latest code still needs a fresh compile/test pass after recent changes. This assistant environment currently does not have `cargo`/`rustc` on PATH, so Rust/Tauri verification cannot be run from here.
+There are no automated tests, and nothing type-checks or compiles in CI outside of a tagged release build. See [the work log](./docs/WORK_LOG.md) for the current gap list.
 
 ## Stack
 
@@ -36,6 +35,7 @@ The project has had local build attempts, but the latest code still needs a fres
 - Downloads: `reqwest`
 - External-source downloads: optional user-installed `yt-dlp`
 - Folder scanning: `walkdir`
+- Lyrics: LRCLIB, cached in SQLite
 
 ## Requirements
 
@@ -133,14 +133,15 @@ dist/
 ## App Workflow
 
 1. Launch the desktop app.
-2. Click **Add Folder** to choose one or more music folders.
+2. Click **Add folder** to choose one or more music folders.
 3. AmpStack scans supported audio files recursively and stores file references in SQLite.
-4. Click a track to load and play it.
-5. Use **Import Files** to add individual files outside a scanned folder.
+4. Click a track to load and play it, or open the full-screen Now Playing view for controls and synced lyrics.
+5. Use **Import files** to add individual files outside a scanned folder.
 6. Paste a direct audio URL into the URL field to save a remote track.
 7. Use the download action on a direct remote audio track to save it for offline playback.
 8. Use the external-source download row for sources you have rights or permission to download.
-9. Use the trash action on a track to remove it from AmpStack.
+9. Favorite, rename, or remove a track from its row actions.
+10. Use **Settings** to change the downloads directory or the data directory.
 
 Local files are referenced in place. They are not copied into the app library by default.
 
@@ -158,7 +159,31 @@ The scanner accepts:
 - Ogg
 - WAV
 
-MP3 is the first MVP target. Other formats are included in the supported extension list and should be validated during playback testing.
+Decoding is handled by `rodio`'s Symphonia backend. MP3 gets the most use; the other formats are accepted by the scanner but have had less playback testing.
+
+## Using One Library On Several Devices
+
+AmpStack is built so a single library database can follow you between machines, even though your music folder lives at a different absolute path on each one.
+
+- Library tracks store a portable, `/`-separated path relative to their library root alongside the absolute path.
+- Each device keeps its own library-root-to-path map in a small bootstrap file stored *outside* the data directory, so syncing the database never overwrites the other device's locations.
+- On a new device, point the data directory at the synced copy in **Settings**, then use the link button next to each library root ("Locate this folder on this device") to say where that folder lives locally. AmpStack rescans and resolves every track as `<this device's root path>/<relative path>`.
+
+Downloaded files resolve against the current device's downloads directory the same way. Rows created before relative paths existed fall back to their stored absolute path.
+
+## Releases
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds Windows, macOS (Apple Silicon and Intel) and Linux bundles and publishes a GitHub release with the artifacts attached.
+
+Before tagging, set the version everywhere with:
+
+```bash
+node .github/scripts/set-version.mjs 0.1.6
+```
+
+CI runs that same script with the pushed tag, so bundle filenames always match the release even if the commit was not bumped.
+
+macOS and Windows bundles are not code-signed, so those platforms show a security warning on first launch.
 
 ## Project Layout
 
@@ -197,9 +222,10 @@ npm run tauri:build  # Build desktop app package
 - `yt-dlp` support is optional and scoped to sources the user has rights or permission to download.
 - AmpStack runs `yt-dlp` with ignored user config, single-item mode, explicit app-managed output paths, and a 500 MB size limit.
 - The Rust URL validator blocks localhost and private/internal IP ranges to reduce SSRF risk.
-- Folder watching is not part of the MVP; use manual rescan.
-- Reading Apple Music, iTunes, Rhythmbox, Spotify, or other platform-specific libraries is out of scope for the MVP.
-- Playback and packaging still need to be compiled and tested on a machine with Rust and Tauri system dependencies installed.
+- Lyrics come from LRCLIB and need a network connection on first lookup; results are cached locally afterwards.
+- There is no folder watching; use manual rescan after changing files on disk.
+- Reading Apple Music, iTunes, Rhythmbox, Spotify, or other platform-specific libraries is out of scope.
+- There are no automated tests, and CI only builds on a release tag.
 
 ## Documentation
 
