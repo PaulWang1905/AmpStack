@@ -17,7 +17,7 @@ differ only in the system-package step.
 |---|---|---|
 | Rust toolchain (rustup) | compiles the backend | proxies installed, **no default toolchain set** |
 | GTK3 / WebKit2GTK 4.1 **-dev** headers | Tauri Linux build | **missing** |
-| Node.js ≥ 18 + npm | frontend build | present (v20) |
+| Node.js 20.19+ or 22.12+ + npm | frontend build and tests | verify with `node --version` |
 | `yt-dlp` | external-source downloads | present |
 | `ffmpeg` | audio extraction for yt-dlp | present |
 
@@ -38,6 +38,7 @@ sudo apt install -y \
   librsvg2-dev \
   libayatana-appindicator3-dev \
   libssl-dev \
+  libasound2-dev \
   build-essential \
   pkgconf \
   curl wget file
@@ -61,12 +62,23 @@ rustc --version && cargo --version   # should now print versions
 
 ## 3. Node.js and frontend packages (clean machine only)
 
-Node 20 + npm are already installed here. On a fresh machine install Node ≥ 18,
+On a fresh machine install Node 20.19+ or 22.12+ and npm,
 then from the project root:
 
 ```bash
 npm install
 ```
+
+Run the regression suite and production frontend build before submitting changes:
+
+```bash
+npm test
+npm run build
+cargo check --locked --manifest-path src-tauri/Cargo.toml
+```
+
+The frontend tests mock desktop commands. The Rust check requires the native
+dependencies above; playback smoke testing also requires an audio device.
 
 ## 4. Runtime tools for downloads (clean machine only)
 
@@ -134,11 +146,18 @@ npm run tauri:build -- --no-bundle
 ### Where the artifacts land
 
 ```
-src-tauri/target/release/bundle/deb/*.deb
-src-tauri/target/release/bundle/rpm/*.rpm
-src-tauri/target/release/bundle/appimage/*.AppImage
-src-tauri/target/release/ampstack            # the raw binary
+~/build_dir/AmpStack/release/bundle/deb/*.deb
+~/build_dir/AmpStack/release/bundle/rpm/*.rpm
+~/build_dir/AmpStack/release/bundle/appimage/*.AppImage
+~/build_dir/AmpStack/release/ampstack            # the raw binary
 ```
+
+`npm run tauri`, `npm run tauri:dev`, and `npm run tauri:build` resolve the
+current user's home directory at launch and set `CARGO_TARGET_DIR` automatically.
+For direct Cargo commands on Linux/macOS, first run
+`export CARGO_TARGET_DIR="$HOME/build_dir/AmpStack"` in that terminal.
+Direct CLI invocations (including release CI) otherwise use Cargo's default
+`src-tauri/target/` directory, unless explicitly configured.
 
 ### Per-format notes
 

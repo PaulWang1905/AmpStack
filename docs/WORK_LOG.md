@@ -1,6 +1,6 @@
 # AmpStack Work Log
 
-Last updated 2026-08-30. Version `0.1.5`, latest tag `v0.1.5`.
+Last updated 2026-11-11. Version `0.1.6`, latest tag `v0.1.5`.
 
 ## Current Build Status
 
@@ -8,9 +8,30 @@ AmpStack is well past the MVP scaffold this log used to describe. The app builds
 and runs locally on Linux, and a cross-platform release workflow builds Windows,
 macOS (Apple Silicon and Intel) and Linux bundles from a pushed `v*` tag.
 
-What has *not* happened: there are no automated tests, and no CI job type-checks
-or compiles outside of a tagged release. Everything below has been exercised by
-hand rather than by a test suite.
+Frontend regression tests now cover queue reconciliation, stopped-track reload,
+playback polling races, repeat modes, and asynchronous event listener cleanup.
+The Checks workflow runs tests, a frontend production build, and `cargo check`
+on branch pushes and pull requests. Native audio behavior still needs manual
+desktop validation.
+
+## Reliability Review (2026-11-11)
+
+See [the review plan](./CODE_REVIEW_PLAN.md) for scope and validation strategy.
+
+- Track and folder removal reconcile queue positions and selected tracks.
+- Removing a folder clears native playback if it contained the playing track.
+- Play reloads stopped/completed tracks because the native source was consumed.
+- Playback polling avoids overlapping requests and ignores results superseded
+  by user commands or playback events. Stop does not trigger queue advancement.
+- Late event listener registrations are disposed after component cleanup;
+  registration failures appear in the existing error UI.
+- Vitest provides a focused regression suite without requiring a native window
+  or audio device. Run `npm test` or `npm run test:watch`.
+
+Validation: all 24 tests and the TypeScript/production frontend build passed,
+along with a clean lockfile install. Rust compilation and desktop playback were
+not run locally because the review environment lacks the Rust toolchain and
+GTK/WebKit/ALSA development packages. The new CI workflow has not yet run.
 
 ## Implemented
 
@@ -113,8 +134,7 @@ anything beyond adding a nullable column will need a real migration story.
 
 ## Known Gaps
 
-- No automated tests of any kind; no CI type-check or `cargo check` outside a
-  tagged release build.
+- No native integration tests for audio playback, downloads, or SQLite migrations.
 - `playlists` / `playlist_tracks` tables exist but no playlist UI is wired up.
 - macOS and Windows bundles are unsigned and un-notarized, so users get an
   OS security warning on first launch.
@@ -128,8 +148,7 @@ anything beyond adding a nullable column will need a real migration story.
 
 ## Possible Next Steps
 
-1. Add a cheap CI job that runs `npm ci && npm run build` (type-check) and
-   `cargo check` on push, so breakage surfaces before a release tag.
+1. Extend regression coverage to native playback, downloads, and database migrations.
 2. Build the playlist UI on the tables that already exist, or drop the tables.
 3. Decide on code signing for macOS/Windows if the builds are going to be
    shared with anyone else.

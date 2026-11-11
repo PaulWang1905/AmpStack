@@ -491,9 +491,28 @@ fn relink_library_folder(root_id: String, path: String, state: State<AppState>) 
 }
 
 #[tauri::command]
-fn remove_library_folder(root_id: String, state: State<AppState>) -> CommandResult<()> {
+fn remove_library_folder(root_id: String, app: AppHandle, state: State<AppState>) -> CommandResult<()> {
     let mut db = state.db.lock().map_err(|_| "Database lock poisoned".to_string())?;
-    db.remove_library_root(&root_id).map_err(|error| error.to_string())
+    let removed_ids: Vec<String> = db.list_tracks().map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|track| track.source_type == "library_file" && track.library_root_id.as_deref() == Some(root_id.as_str()))
+        .map(|track| track.id)
+        .collect();
+    db.remove_library_root(&root_id).map_err(|error| error.to_string())?;
+    drop(db);
+
+    let snapshot = {
+        let mut player = state.player.lock().map_err(|_| "Player lock poisoned".to_string())?;
+        if player.snapshot().track_id.as_ref().is_some_and(|id| removed_ids.contains(id)) {
+            Some(player.clear())
+        } else {
+            None
+        }
+    };
+    if let Some(snapshot) = snapshot {
+        emit_playback(&app, &snapshot);
+    }
+    Ok(())
 }
 
 #[tauri::command]

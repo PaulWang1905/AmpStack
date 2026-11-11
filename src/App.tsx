@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkYtDlp, listenDownloadProgress, listenPlayback } from "./tauri";
+import { registerListeners } from "./events";
 import { selectActiveDownloads, selectActiveTrack, selectFilteredTracks, useAppStore } from "./store";
 import type { Track, YtDlpStatus } from "./types";
 
@@ -1474,32 +1475,20 @@ export function App() {
   const setDownloadProgress = useAppStore((state) => state.setDownloadProgress);
   const view = useAppStore((state) => state.view);
   const [renameTarget, setRenameTarget] = useState<Track | null>(null);
-  const endedGuard = useRef(false);
 
   useEffect(() => {
     loadInitialData();
 
-    const unlisteners: Array<() => void> = [];
-    listenPlayback(setPlayback).then((unlisten) => unlisteners.push(unlisten));
-    listenDownloadProgress(setDownloadProgress).then((unlisten) => unlisteners.push(unlisten));
-
-    return () => {
-      unlisteners.forEach((unlisten) => unlisten());
-    };
+    return registerListeners(
+      [listenPlayback(setPlayback), listenDownloadProgress(setDownloadProgress)],
+      (error) => useAppStore.setState({ error: error instanceof Error ? error.message : String(error) })
+    );
   }, [loadInitialData, setDownloadProgress, setPlayback]);
 
   // Poll position while playing, and auto-advance the queue when a track ends.
   useEffect(() => {
-    const interval = window.setInterval(async () => {
-      const state = useAppStore.getState();
-      if (state.playback.status !== "playing") return;
-      await state.refreshPlayback();
-      const after = useAppStore.getState().playback.status;
-      if (after === "stopped" && !endedGuard.current) {
-        endedGuard.current = true;
-        await useAppStore.getState().handleTrackEnded();
-        endedGuard.current = false;
-      }
+    const interval = window.setInterval(() => {
+      void useAppStore.getState().refreshPlayback();
     }, 500);
 
     return () => window.clearInterval(interval);

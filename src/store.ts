@@ -111,15 +111,48 @@ function messageFrom(error: unknown): string {
 }
 
 function randomOtherIndex(length: number, current: number): number {
-  if (length <= 1) return current;
-  let next = current;
-  while (next === current) {
-    next = Math.floor(Math.random() * length);
-  }
-  return next;
+  if (length <= 1) return 0;
+  if (current < 0 || current >= length) return Math.floor(Math.random() * length);
+  const next = Math.floor(Math.random() * (length - 1));
+  return next >= current ? next + 1 : next;
 }
 
-export const useAppStore = create<AppStore>((set, get) => ({
+function reconcileQueue(state: AppStore, tracks: Track[]) {
+  const ids = new Set(tracks.map((track) => track.id));
+  const queue = state.queue.filter((id) => ids.has(id));
+  const currentId = state.queue[state.queueIndex];
+  const survivingIndex = queue.indexOf(currentId);
+  // If the current entry was removed, select its successor (or the last entry).
+  const precedingCount = state.queue.slice(0, Math.max(0, state.queueIndex)).filter((id) => ids.has(id)).length;
+  const queueIndex = queue.length === 0 || state.queueIndex < 0
+    ? -1
+    : survivingIndex >= 0 ? survivingIndex : Math.min(precedingCount, queue.length - 1);
+  return {
+    queue,
+    queueIndex,
+    selectedTrackId: state.selectedTrackId && ids.has(state.selectedTrackId) ? state.selectedTrackId : null
+  };
+}
+
+export const useAppStore = create<AppStore>((set, get) => {
+  let playbackRevision = 0;
+  let pendingPlaybackCommands = 0;
+  let refreshingPlayback = false;
+
+  const updatePlayback = async (command: () => Promise<PlaybackState>) => {
+    const revision = ++playbackRevision;
+    pendingPlaybackCommands += 1;
+    try {
+      const playback = await command();
+      if (revision === playbackRevision) set({ playback });
+    } catch (error) {
+      if (revision === playbackRevision) set({ error: messageFrom(error) });
+    } finally {
+      pendingPlaybackCommands -= 1;
+    }
+  };
+
+  return ({
   tracks: [],
   libraryRoots: [],
   playback: initialPlayback,
@@ -225,17 +258,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   removeRoot: async (rootId) => {
+    playbackRevision += 1;
+    pendingPlaybackCommands += 1;
     set({ busy: true, error: null });
     try {
       await api.removeLibraryFolder(rootId);
-      const [tracks, libraryRoots] = await Promise.all([api.listTracks(), api.listLibraryRoots()]);
-      set({ tracks, libraryRoots, busy: false });
+      const [tracks, libraryRoots, playback] = await Promise.all([
+        api.listTracks(), api.listLibraryRoots(), api.getPlaybackState()
+      ]);
+      set((state) => ({ tracks, libraryRoots, playback, ...reconcileQueue(state, tracks), busy: false }));
     } catch (error) {
       set({ error: messageFrom(error), busy: false });
+    } finally {
+      pendingPlaybackCommands -= 1;
     }
   },
 
   deleteTrack: async (trackId) => {
+    playbackRevision += 1;
+    pendingPlaybackCommands += 1;
     set({ busy: true, error: null });
     try {
       await api.deleteTrack(trackId);
@@ -248,13 +289,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
           tracks,
           playback,
           downloads,
-          queue: state.queue.filter((id) => id !== trackId),
-          selectedTrackId: state.selectedTrackId === trackId ? null : state.selectedTrackId,
+          ...reconcileQueue(state, tracks),
           busy: false
         };
       });
     } catch (error) {
       set({ error: messageFrom(error), busy: false });
+    } finally {
+      pendingPlaybackCommands -= 1;
     }
   },
 
@@ -374,13 +416,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   loadAndPlayInternal: async (trackId) => {
     set({ selectedTrackId: trackId, error: null });
-    try {
+    await updatePlayback(async () => {
       await api.loadTrack(trackId);
-      const playback = await api.play();
-      set({ playback });
-    } catch (error) {
-      set({ error: messageFrom(error) });
-    }
+      return api.play();
+    });
   },
 
   togglePlay: async () => {
@@ -395,28 +434,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   play: async () => {
-    try {
-      set({ playback: await api.play() });
-    } catch (error) {
-      set({ error: messageFrom(error) });
+    const { playback } = get();
+    // rodio removes the source on stop/completion, so it must be loaded again.
+    if (playback.status === "stopped" && playback.trackId) {
+      await get().loadAndPlayInternal(playback.trackId);
+    } else {
+      await updatePlayback(api.play);
     }
   },
 
-  pause: async () => {
-    try {
-      set({ playback: await api.pause() });
-    } catch (error) {
-      set({ error: messageFrom(error) });
-    }
-  },
+  pause: () => updatePlayback(api.pause),
 
-  stop: async () => {
-    try {
-      set({ playback: await api.stop() });
-    } catch (error) {
-      set({ error: messageFrom(error) });
-    }
-  },
+  stop: () => updatePlayback(api.stop),
 
   next: async () => {
     const { queue, queueIndex, shuffle, repeat } = get();
@@ -461,7 +490,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   handleTrackEnded: async () => {
     const { repeat, queue, queueIndex } = get();
-    if (queue.length === 0 || queueIndex < 0) return;
+    if (queue.length === 0 || queueIndex < 0 || queueIndex >= queue.length) return;
     if (repeat === "one") {
       await get().loadAndPlayInternal(queue[queueIndex]);
       return;
@@ -478,27 +507,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
   cycleRepeat: () =>
     set((state) => ({ repeat: state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off" })),
 
-  seek: async (positionSeconds) => {
-    try {
-      set({ playback: await api.seek(positionSeconds) });
-    } catch (error) {
-      set({ error: messageFrom(error) });
-    }
-  },
+  seek: (positionSeconds) => updatePlayback(() => api.seek(positionSeconds)),
 
-  setVolume: async (volume) => {
-    try {
-      set({ playback: await api.setVolume(volume) });
-    } catch (error) {
-      set({ error: messageFrom(error) });
-    }
-  },
+  setVolume: (volume) => updatePlayback(() => api.setVolume(volume)),
 
   refreshPlayback: async () => {
+    const before = get().playback;
+    if (refreshingPlayback || pendingPlaybackCommands > 0 || before.status !== "playing") return;
+    refreshingPlayback = true;
+    const revision = playbackRevision;
     try {
-      set({ playback: await api.getPlaybackState() });
+      const playback = await api.getPlaybackState();
+      if (revision !== playbackRevision || get().playback !== before) return;
+      set({ playback });
+      if (playback.status === "stopped" && playback.trackId === before.trackId) {
+        await get().handleTrackEnded();
+      }
     } catch (error) {
-      set({ error: messageFrom(error) });
+      if (revision === playbackRevision) set({ error: messageFrom(error) });
+    } finally {
+      refreshingPlayback = false;
     }
   },
 
@@ -532,7 +560,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }, 6000);
     }
   }
-}));
+  });
+});
 
 export function selectActiveDownloads(state: AppStore): DownloadProgress[] {
   return Object.values(state.downloads);

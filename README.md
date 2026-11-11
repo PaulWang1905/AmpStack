@@ -6,7 +6,7 @@ The app is built with a React/TypeScript interface inside a Tauri desktop shell.
 
 ## Current Status
 
-Version `0.1.5`. The app builds and runs, and tagged releases produce Windows, macOS (Apple Silicon and Intel) and Linux bundles.
+Version `0.1.6`. The app builds and runs, and tagged releases produce Windows, macOS (Apple Silicon and Intel) and Linux bundles.
 
 What works today:
 
@@ -20,7 +20,7 @@ What works today:
 - configurable downloads and data directories, with data-dir migration
 - a dark "Nocturne" interface with a custom title bar and a full-screen Now Playing view
 
-There are no automated tests, and nothing type-checks or compiles in CI outside of a tagged release build. See [the work log](./docs/WORK_LOG.md) for the current gap list.
+Frontend regression tests cover queue changes, playback polling, stop/resume, and event listener cleanup. Pushes and pull requests run these tests, the frontend production build, and a Rust compilation check. See [the work log](./docs/WORK_LOG.md) for the current gap list.
 
 ## Stack
 
@@ -41,7 +41,7 @@ There are no automated tests, and nothing type-checks or compiles in CI outside 
 
 Install these before running the app:
 
-- Node.js 20 or newer
+- Node.js 20.19+ or 22.12+ (matching Vite's supported versions)
 - npm
 - Rust 1.77 or newer
 - Tauri system dependencies for your OS
@@ -58,6 +58,7 @@ sudo apt install libwebkit2gtk-4.1-dev \
   file \
   libxdo-dev \
   libssl-dev \
+  libasound2-dev \
   libayatana-appindicator3-dev \
   librsvg2-dev
 ```
@@ -115,8 +116,12 @@ npm run tauri:build
 Tauri build artifacts are written under:
 
 ```txt
-src-tauri/target/release/bundle/
+~/build_dir/AmpStack/release/bundle/
 ```
+
+The npm Tauri commands resolve the current user's home directory on each launch,
+so this path works for any username. For direct Cargo commands on Linux/macOS,
+set `CARGO_TARGET_DIR="$HOME/build_dir/AmpStack"` to use the same directory.
 
 Build only the web frontend:
 
@@ -210,6 +215,8 @@ src-tauri/
 ```bash
 npm run dev          # Vite frontend dev server only
 npm run build        # Type-check and build frontend
+npm test             # Run frontend regression tests
+npm run test:watch   # Run tests in watch mode
 npm run preview      # Preview built frontend
 npm run tauri        # Run local Tauri CLI
 npm run tauri:dev    # Run desktop app in development
@@ -225,7 +232,7 @@ npm run tauri:build  # Build desktop app package
 - Lyrics come from LRCLIB and need a network connection on first lookup; results are cached locally afterwards.
 - There is no folder watching; use manual rescan after changing files on disk.
 - Reading Apple Music, iTunes, Rhythmbox, Spotify, or other platform-specific libraries is out of scope.
-- There are no automated tests, and CI only builds on a release tag.
+- Frontend tests mock Tauri commands; native audio playback still needs desktop smoke testing.
 
 ## Documentation
 
